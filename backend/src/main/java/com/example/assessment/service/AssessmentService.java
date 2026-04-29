@@ -15,6 +15,7 @@ import com.example.assessment.model.CourseObjective;
 import com.example.assessment.model.ExamPaperSummary;
 import com.example.assessment.model.ExamPaperType;
 import com.example.assessment.model.ExamResult;
+import com.example.assessment.model.MockExamResultGenerationResult;
 import com.example.assessment.model.QuestionImportResult;
 import com.example.assessment.model.ProfessionalClassImportResult;
 import com.example.assessment.model.ProfessionalClassOption;
@@ -84,6 +85,7 @@ public class AssessmentService {
     private final TeachingAssignmentRepository teachingAssignmentRepository;
     private final ProfessionalClassRepository professionalClassRepository;
     private final UserAccountRepository userAccountRepository;
+    private final OpenAiGradingService openAiGradingService;
 
     public AssessmentService(AnswerRecordRepository answerRecordRepository,
                              StudentRepository studentRepository,
@@ -92,7 +94,8 @@ public class AssessmentService {
                              ExamResultRepository examResultRepository,
                              TeachingAssignmentRepository teachingAssignmentRepository,
                              ProfessionalClassRepository professionalClassRepository,
-                             UserAccountRepository userAccountRepository) {
+                             UserAccountRepository userAccountRepository,
+                             OpenAiGradingService openAiGradingService) {
         this.answerRecordRepository = answerRecordRepository;
         this.studentRepository = studentRepository;
         this.questionRepository = questionRepository;
@@ -101,6 +104,7 @@ public class AssessmentService {
         this.teachingAssignmentRepository = teachingAssignmentRepository;
         this.professionalClassRepository = professionalClassRepository;
         this.userAccountRepository = userAccountRepository;
+        this.openAiGradingService = openAiGradingService;
     }
 
     @Transactional(readOnly = true)
@@ -345,10 +349,10 @@ public class AssessmentService {
         List<StudentEntity> entities = switch (actor.getRole()) {
             case ADMIN -> studentRepository.findAllByOrderByIdAsc();
             case TEACHER -> studentRepository.findAllByTeachingAssignmentsTeacherAccountUsernameOrderByIdAsc(actor.getUsername());
-            case STUDENT -> actor.getStudent() == null ? List.of() : List.of(
-                    studentRepository.findById(actor.getStudent().getId())
-                            .orElse(actor.getStudent())
-            );
+            case STUDENT -> {
+                StudentEntity currentStudent = loadStudentForActor(actor);
+                yield currentStudent == null ? List.of() : List.of(currentStudent);
+            }
         };
 
         Map<Long, UserAccountEntity> accountsByStudentId = studentAccountsByStudentId(entities);
@@ -641,7 +645,7 @@ public class AssessmentService {
     public List<ExamPaperSummary> listExams(UserAccountEntity actor) {
         List<ExamPaperEntity> exams;
         if (actor.getRole() == UserRole.STUDENT) {
-            StudentEntity student = actor.getStudent();
+            StudentEntity student = loadStudentForActor(actor);
             if (student == null) {
                 return List.of();
             }
@@ -721,6 +725,56 @@ public class AssessmentService {
         return toExamSummary(savedExam, actor);
     }
 
+    @Transactional
+    public MockExamResultGenerationResult generateMockResults(UserAccountEntity actor, Long examId) {
+        ExamPaperEntity exam = loadExamPaper(examId);
+        if (actor.getRole() == UserRole.TEACHER) {
+            validateTeacherOwnsAssignment(actor, exam.getTeachingAssignment());
+        }
+        if (exam.getTeachingAssignment() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The exam is not bound to a teaching assignment");
+        }
+
+        List<QuestionEntity> questions = questionRepository.findAllByPaperIdOrderBySortOrderAscIdAsc(exam.getId());
+        if (questions.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The selected exam does not contain any questions");
+        }
+
+        List<StudentEntity> enrolledStudents = studentRepository.findAllByTeachingAssignmentsIdOrderByIdAsc(exam.getTeachingAssignment().getId());
+        if (enrolledStudents.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "There are no students in the current teaching assignment");
+        }
+
+        Set<Long> submittedStudentIds = examResultRepository.findAllByPaperIdOrderBySubmittedAtDesc(exam.getId()).stream()
+                .map(ExamResultEntity::getStudent)
+                .filter(Objects::nonNull)
+                .map(StudentEntity::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        int createdCount = 0;
+        int skippedCount = 0;
+        int simulationIndex = 0;
+
+        for (StudentEntity student : enrolledStudents) {
+            if (student.getId() == null || submittedStudentIds.contains(student.getId())) {
+                skippedCount++;
+                continue;
+            }
+            Map<Long, String> mockAnswers = buildMockAnswers(questions, simulationIndex++);
+            createExamResult(exam, student, questions, mockAnswers, mockSubmittedAt(exam, simulationIndex));
+            createdCount++;
+        }
+
+        List<String> messages = new ArrayList<>();
+        messages.add("Generated " + createdCount + " mock answer sheets for the selected exam");
+        if (skippedCount > 0) {
+            messages.add(skippedCount + " students were skipped because they had already submitted");
+        }
+
+        return new MockExamResultGenerationResult(exam.getId(), createdCount, skippedCount, messages);
+    }
+
     @Transactional(readOnly = true)
     public List<Question> listExamQuestions(UserAccountEntity actor, Long examId) {
         ExamPaperEntity exam = loadExamPaper(examId);
@@ -732,9 +786,13 @@ public class AssessmentService {
 
     @Transactional(readOnly = true)
     public List<ExamResult> listResults(UserAccountEntity actor) {
-        List<ExamResultEntity> entities = actor.getRole() == UserRole.ADMIN
-                ? examResultRepository.findAllByOrderBySubmittedAtDesc()
-                : examResultRepository.findAllByPaperTeachingAssignmentTeacherAccountUsernameOrderBySubmittedAtDesc(actor.getUsername());
+        List<ExamResultEntity> entities = switch (actor.getRole()) {
+            case ADMIN -> examResultRepository.findAllByOrderBySubmittedAtDesc();
+            case TEACHER -> examResultRepository.findAllByPaperTeachingAssignmentTeacherAccountUsernameOrderBySubmittedAtDesc(actor.getUsername());
+            case STUDENT -> actor.getStudent() == null || actor.getStudent().getId() == null
+                    ? List.of()
+                    : examResultRepository.findAllByStudentIdOrderBySubmittedAtDesc(actor.getStudent().getId());
+        };
         return entities.stream()
                 .map(this::toExamResult)
                 .toList();
@@ -781,32 +839,8 @@ public class AssessmentService {
         }
         List<QuestionEntity> questions = questionRepository.findAllByPaperIdOrderBySortOrderAscIdAsc(paper.getId());
 
-        ExamResultEntity result = new ExamResultEntity();
-        result.setPaper(paper);
-        result.setStudent(student);
-        result.setCourseName(paper.getCourseName());
-        result.setSubmittedAt(LocalDateTime.now());
-
-        List<AnswerRecordEntity> records = new ArrayList<>();
-        int total = 0;
         Map<Long, String> submittedAnswers = request.answers() == null ? Map.of() : request.answers();
-        for (QuestionEntity question : questions) {
-            String answer = submittedAnswers.getOrDefault(question.getId(), "");
-            int score = grade(question, answer);
-            total += score;
-
-            AnswerRecordEntity record = new AnswerRecordEntity();
-            record.setResult(result);
-            record.setQuestion(question);
-            record.setStudentAnswer(answer);
-            record.setScore(score);
-            record.setSuggestion(suggestion(question, score));
-            records.add(record);
-        }
-
-        result.setAnswers(records);
-        result.setTotalScore(total);
-        return toExamResult(examResultRepository.save(result));
+        return toExamResult(createExamResult(paper, student, questions, submittedAnswers, LocalDateTime.now()));
     }
 
     @Transactional
@@ -1381,6 +1415,117 @@ public class AssessmentService {
                 || right.contains("class");
     }
 
+    private ExamResultEntity createExamResult(ExamPaperEntity paper,
+                                              StudentEntity student,
+                                              List<QuestionEntity> questions,
+                                              Map<Long, String> submittedAnswers,
+                                              LocalDateTime submittedAt) {
+        ExamResultEntity result = new ExamResultEntity();
+        result.setPaper(paper);
+        result.setStudent(student);
+        result.setCourseName(paper.getCourseName());
+        result.setSubmittedAt(submittedAt == null ? LocalDateTime.now() : submittedAt);
+
+        List<AnswerRecordEntity> records = new ArrayList<>();
+        int total = 0;
+        for (QuestionEntity question : questions) {
+            String answer = submittedAnswers.getOrDefault(question.getId(), "");
+            GradingDecision gradingDecision = gradeAnswer(question, answer);
+            total += gradingDecision.score();
+
+            AnswerRecordEntity record = new AnswerRecordEntity();
+            record.setResult(result);
+            record.setQuestion(question);
+            record.setStudentAnswer(answer);
+            record.setScore(gradingDecision.score());
+            record.setSuggestion(gradingDecision.suggestion());
+            records.add(record);
+        }
+
+        result.setAnswers(records);
+        result.setTotalScore(total);
+        return examResultRepository.save(result);
+    }
+
+    private Map<Long, String> buildMockAnswers(List<QuestionEntity> questions, int variantSeed) {
+        Map<Long, String> answers = new LinkedHashMap<>();
+        List<String> subjectiveSamples = List.of(
+                "先明确范围、进度、成本和风险，再通过里程碑跟踪与复盘机制保证交付。",
+                "建议补充需求澄清、沟通机制、资源分配和过程监控，减少项目延期风险。",
+                "需要从需求分析、任务分解、风险应对和质量控制几个方面形成闭环。"
+        );
+
+        for (int index = 0; index < questions.size(); index++) {
+            QuestionEntity question = questions.get(index);
+            String answer;
+            if (question.getType() == QuestionType.SINGLE_CHOICE && question.getOptions() != null && !question.getOptions().isEmpty()) {
+                if ((variantSeed + index) % 5 == 0 && question.getOptions().size() > 1) {
+                    answer = optionKey(question.getOptions().get(1));
+                } else {
+                    answer = normalizeObjectiveAnswer(question);
+                }
+            } else if (question.getType() == QuestionType.FILL_BLANK) {
+                answer = (variantSeed + index) % 4 == 0 ? "接受" : normalizeObjectiveAnswer(question);
+            } else {
+                String base = subjectiveSamples.get((variantSeed + index) % subjectiveSamples.size());
+                String keyPoints = question.getAnswer() == null ? "" : question.getAnswer().replaceAll("\\s+", "、");
+                answer = keyPoints.isBlank() ? base : base + " 关键点包括：" + keyPoints + "。";
+            }
+            answers.put(question.getId(), answer);
+        }
+        return answers;
+    }
+
+    private String optionKey(String option) {
+        if (option == null || option.isBlank()) {
+            return "";
+        }
+        return option.substring(0, 1).trim();
+    }
+
+    private String normalizeObjectiveAnswer(QuestionEntity question) {
+        if (question.getAnswer() == null) {
+            return "";
+        }
+        return question.getAnswer().trim();
+    }
+
+    private LocalDateTime mockSubmittedAt(ExamPaperEntity exam, int variantSeed) {
+        if (exam.getStartTime() == null) {
+            return LocalDateTime.now().minusMinutes((variantSeed % 45) + 5L);
+        }
+        LocalDateTime baseTime = exam.getStartTime().plusMinutes((variantSeed % Math.max(10, exam.getDurationMinutes())) + 5L);
+        return baseTime.isAfter(LocalDateTime.now()) ? LocalDateTime.now().minusMinutes(1) : baseTime;
+    }
+
+    private GradingDecision gradeAnswer(QuestionEntity question, String answer) {
+        String normalized = normalize(answer);
+        String expected = normalize(question.getAnswer());
+
+        if (question.getType() == QuestionType.SINGLE_CHOICE) {
+            int score = normalized.equals(expected) ? question.getScore() : 0;
+            return new GradingDecision(score, suggestion(question, score));
+        }
+
+        if (question.getType() == QuestionType.FILL_BLANK && normalized.equals(expected)) {
+            return new GradingDecision(question.getScore(), "Auto-scored as a full-credit exact match");
+        }
+
+        if (normalized.isBlank()) {
+            return new GradingDecision(0, "Student answer is blank");
+        }
+
+        int heuristicScore = grade(question, answer);
+        String heuristicSuggestion = suggestion(question, heuristicScore);
+
+        return openAiGradingService.gradeQuestion(question, answer)
+                .map(decision -> new GradingDecision(
+                        Math.max(0, Math.min(question.getScore(), decision.score())),
+                        decision.suggestion()
+                ))
+                .orElseGet(() -> new GradingDecision(heuristicScore, heuristicSuggestion));
+    }
+
     private void recalculateResult(ExamResultEntity result) {
         int total = result.getAnswers().stream()
                 .mapToInt(AnswerRecordEntity::getScore)
@@ -1410,9 +1555,9 @@ public class AssessmentService {
             return "Auto-scored as a full-credit answer";
         }
         if (question.getType() == QuestionType.SINGLE_CHOICE || question.getType() == QuestionType.FILL_BLANK) {
-            return "Objective answer mismatch, please review if equivalent wording should receive credit";
+            return "Objective answer mismatch, fallback rule-based grading applied";
         }
-        return "AI suggested score: " + score + ". Expected key points: " + question.getAnswer();
+        return "Fallback heuristic score: " + score + ". Expected key points: " + question.getAnswer();
     }
 
     private List<String> buildSuggestions(Map<String, Double> objectiveAverage, double average) {
@@ -1447,6 +1592,9 @@ public class AssessmentService {
 
     private double round(double value) {
         return Math.round(value * 10.0) / 10.0;
+    }
+
+    private record GradingDecision(int score, String suggestion) {
     }
 
     private ExamPaperEntity questionBankPaper() {
@@ -1498,7 +1646,15 @@ public class AssessmentService {
             validateTeacherOwnsAssignment(actor, exam.getTeachingAssignment());
             return;
         }
-        validateStudentCanJoinExam(actor.getStudent(), exam);
+        validateStudentCanJoinExam(loadStudentForActor(actor), exam);
+    }
+
+    private StudentEntity loadStudentForActor(UserAccountEntity actor) {
+        if (actor == null || actor.getStudent() == null || actor.getStudent().getId() == null) {
+            return null;
+        }
+        return studentRepository.findDetailedById(actor.getStudent().getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Student not found"));
     }
 
     private void validateStudentCanJoinExam(StudentEntity student, ExamPaperEntity exam) {

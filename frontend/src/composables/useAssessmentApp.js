@@ -1,4 +1,4 @@
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import {
   BarChart3,
@@ -101,6 +101,8 @@ export function useAssessmentApp() {
   const candidateStudents = ref([])
   const candidateKeyword = ref('')
   const examAnswers = ref({})
+  const examAnswerSheets = ref({})
+  const nowTick = ref(Date.now())
   const optionText = ref('')
   const importFile = ref(null)
   const importFileRef = ref(null)
@@ -124,6 +126,7 @@ export function useAssessmentApp() {
     startTime: '',
     durationMinutes: 120
   })
+  let examClockTimer = 0
 
   const assignmentForm = ref({
     courseName: defaultCourseName,
@@ -256,12 +259,147 @@ export function useAssessmentApp() {
     }
     return results.value.filter(result => result.examId === selectedResultExamId.value)
   })
+  const selectedExamResult = computed(() =>
+    results.value.find(result => result.examId === selectedExamId.value) ?? null
+  )
+  const selectedExamStartAt = computed(() => {
+    if (!selectedExam.value?.startTime) {
+      return null
+    }
+    const parsed = new Date(selectedExam.value.startTime)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  })
+  const selectedExamEndAt = computed(() => {
+    if (!selectedExamStartAt.value || !selectedExam.value?.durationMinutes) {
+      return null
+    }
+    return new Date(selectedExamStartAt.value.getTime() + Number(selectedExam.value.durationMinutes) * 60 * 1000)
+  })
+  const selectedExamStatus = computed(() => resolveExamStatus(selectedExam.value))
+  const selectedExamStatusLabel = computed(() => resolveExamStatusLabel(selectedExam.value))
+  const selectedExamCountdownLabel = computed(() => {
+    if (selectedExamStatus.value === 'upcoming' && selectedExamStartAt.value) {
+      return `距离开始 ${formatDuration(Math.max(0, Math.floor((selectedExamStartAt.value.getTime() - nowTick.value) / 1000)))}`
+    }
+    if (selectedExamStatus.value === 'ongoing' && selectedExamEndAt.value) {
+      return `剩余 ${formatDuration(Math.max(0, Math.floor((selectedExamEndAt.value.getTime() - nowTick.value) / 1000)))}`
+    }
+    if (selectedExamStatus.value === 'ended') {
+      return '考试时间已截止'
+    }
+    if (selectedExamStatus.value === 'submitted') {
+      return '该考试已完成提交'
+    }
+    return '可随时进入答题'
+  })
+  const answeredExamQuestionIds = computed(() =>
+    examQuestions.value
+      .filter(question => hasAnswer(examAnswers.value[question.id]))
+      .map(question => question.id)
+  )
+  const examAnsweredCount = computed(() => answeredExamQuestionIds.value.length)
+  const examUnansweredQuestions = computed(() =>
+    examQuestions.value.filter(question => !hasAnswer(examAnswers.value[question.id]))
+  )
+  const examProgressPercent = computed(() => {
+    if (!examQuestions.value.length) {
+      return 0
+    }
+    return Math.round((examAnsweredCount.value / examQuestions.value.length) * 100)
+  })
+  const canSubmitSelectedExam = computed(() =>
+    Boolean(
+      selectedExam.value
+      && examQuestions.value.length
+      && !['submitted', 'upcoming', 'ended', 'unselected'].includes(selectedExamStatus.value)
+    )
+  )
+  const submitDisabledReason = computed(() => {
+    if (!selectedExam.value) {
+      return '请先选择考试'
+    }
+    if (selectedExamStatus.value === 'submitted') {
+      return '该考试已提交'
+    }
+    if (selectedExamStatus.value === 'upcoming') {
+      return '考试尚未开始'
+    }
+    if (selectedExamStatus.value === 'ended') {
+      return '考试已结束，无法提交'
+    }
+    if (!examQuestions.value.length) {
+      return '当前考试暂无试题'
+    }
+    return ''
+  })
   const topbarEyebrow = computed(() => {
     if (isTeacher.value && selectedTeachingAssignment.value) {
       return `${selectedTeachingAssignment.value.courseName} / ${selectedTeachingAssignment.value.className}`
     }
     return '高校课程评估与考试管理'
   })
+
+  function resolveExamStatus(exam) {
+    if (!exam) {
+      return 'unselected'
+    }
+    if (exam.submitted) {
+      return 'submitted'
+    }
+    if (!exam.startTime) {
+      return 'available'
+    }
+    const startAt = new Date(exam.startTime)
+    if (Number.isNaN(startAt.getTime())) {
+      return 'available'
+    }
+    const endAt = new Date(startAt.getTime() + Number(exam.durationMinutes || 0) * 60 * 1000)
+    const now = nowTick.value
+    if (now < startAt.getTime()) {
+      return 'upcoming'
+    }
+    if (now > endAt.getTime()) {
+      return 'ended'
+    }
+    return 'ongoing'
+  }
+
+  function resolveExamStatusLabel(exam) {
+    switch (resolveExamStatus(exam)) {
+      case 'submitted':
+        return '已提交'
+      case 'upcoming':
+        return '未开始'
+      case 'ended':
+        return '已截止'
+      case 'ongoing':
+        return '进行中'
+      case 'available':
+        return '可作答'
+      default:
+        return '未选择'
+    }
+  }
+
+  function resolveExamStatusTone(exam) {
+    switch (resolveExamStatus(exam)) {
+      case 'submitted':
+        return 'success'
+      case 'upcoming':
+        return 'warning'
+      case 'ended':
+        return 'danger'
+      case 'ongoing':
+      case 'available':
+        return 'info'
+      default:
+        return 'muted'
+    }
+  }
+
+  function canOpenExam(exam) {
+    return resolveExamStatus(exam) !== 'ended'
+  }
 
   function canView(view) {
     return currentUser.value?.allowedViews?.includes(view)
@@ -345,7 +483,11 @@ export function useAssessmentApp() {
       selectedTeachingAssignmentId.value = teachingAssignments.value[0]?.id ?? null
     }
     if (canView('exam')) {
-      if (!selectedExamId.value || !exams.value.some(item => item.id === selectedExamId.value)) {
+      if (currentUser.value?.role === 'STUDENT') {
+        if (selectedExamId.value && !exams.value.some(item => item.id === selectedExamId.value)) {
+          selectedExamId.value = null
+        }
+      } else if (!selectedExamId.value || !exams.value.some(item => item.id === selectedExamId.value)) {
         selectedExamId.value = exams.value[0]?.id ?? null
       }
       if (selectedResultExamId.value && !exams.value.some(item => item.id === selectedResultExamId.value)) {
@@ -597,6 +739,7 @@ export function useAssessmentApp() {
     selectedResultExamId.value = null
     selectedExamQuestionIds.value = []
     examAnswers.value = {}
+    examAnswerSheets.value = {}
     importFile.value = null
     classImportFile.value = null
     questionImportFile.value = null
@@ -627,7 +770,7 @@ export function useAssessmentApp() {
         api.students(),
         canView('teaching') || canView('students') ? api.teachingAssignments() : Promise.resolve([]),
         canView('exam') ? api.exams() : Promise.resolve([]),
-        canView('results') ? api.results() : Promise.resolve([]),
+        (canView('results') || currentUser.value?.role === 'STUDENT') ? api.results() : Promise.resolve([]),
         canView('dashboard') || canView('reports') ? api.analysis() : Promise.resolve(null),
         isAdmin.value ? api.teacherAccounts() : Promise.resolve([]),
         isAdmin.value ? api.professionalClasses() : Promise.resolve([])
@@ -864,9 +1007,10 @@ export function useAssessmentApp() {
     }
     try {
       examQuestions.value = await api.examQuestions(selectedExamId.value)
+      const cachedAnswers = examAnswerSheets.value[selectedExamId.value] ?? {}
       const nextAnswers = {}
       for (const question of examQuestions.value) {
-        nextAnswers[question.id] = examAnswers.value[question.id] ?? ''
+        nextAnswers[question.id] = cachedAnswers[question.id] ?? ''
       }
       examAnswers.value = nextAnswers
     } catch (error) {
@@ -909,6 +1053,20 @@ export function useAssessmentApp() {
       setSuccess('考试已创建并完成组卷')
     } catch (error) {
       setError(error, '创建考试失败')
+    }
+  }
+
+  async function generateMockResults(examId = selectedExamId.value) {
+    if (!examId) {
+      setError(new Error('请先选择一场考试'))
+      return
+    }
+    try {
+      const result = await api.generateMockResults(examId)
+      await loadAll()
+      setSuccess(result.messages?.join('；') || `已生成 ${result.createdCount} 份模拟答卷`)
+    } catch (error) {
+      setError(error, '生成模拟答卷失败')
     }
   }
 
@@ -1007,6 +1165,44 @@ export function useAssessmentApp() {
         studentId: selectedStudentId.value,
         answers: examAnswers.value
       })
+      examAnswers.value = {}
+      if (canView('results')) {
+        activeView.value = 'results'
+        selectedResultExamId.value = selectedExamId.value
+      }
+      await loadAll()
+      setSuccess('考试已提交并完成自动判分。')
+    } catch (error) {
+      setError(error, '提交考试失败')
+    }
+  }
+
+  async function submitExamWithValidation() {
+    if (!selectedExamId.value) {
+      setError(new Error('请先选择考试'))
+      return
+    }
+    if (!selectedStudentId.value) {
+      setError(new Error('缺少考生信息'))
+      return
+    }
+    if (!canSubmitSelectedExam.value) {
+      setError(new Error(submitDisabledReason.value || '当前无法提交试卷'))
+      return
+    }
+    if (examUnansweredQuestions.value.length > 0) {
+      const shouldContinue = window.confirm(`还有 ${examUnansweredQuestions.value.length} 道题未作答，仍要提交吗？`)
+      if (!shouldContinue) {
+        return
+      }
+    }
+    try {
+      await api.submitExam({
+        examId: selectedExamId.value,
+        studentId: selectedStudentId.value,
+        answers: examAnswers.value
+      })
+      delete examAnswerSheets.value[selectedExamId.value]
       examAnswers.value = {}
       if (canView('results')) {
         activeView.value = 'results'
@@ -1139,6 +1335,37 @@ export function useAssessmentApp() {
     return questions.value.find(item => item.id === questionId)?.score ?? 100
   }
 
+  function hasAnswer(value) {
+    if (Array.isArray(value)) {
+      return value.length > 0
+    }
+    return String(value ?? '').trim().length > 0
+  }
+
+  function formatDuration(totalSeconds) {
+    const seconds = Math.max(0, Number(totalSeconds) || 0)
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const remainSeconds = seconds % 60
+    if (hours > 0) {
+      return `${hours}小时 ${minutes}分钟`
+    }
+    if (minutes > 0) {
+      return `${minutes}分钟 ${remainSeconds}秒`
+    }
+    return `${remainSeconds}秒`
+  }
+
+  function jumpToExamQuestion(questionId) {
+    if (!questionId) {
+      return
+    }
+    document.getElementById(`exam-question-${questionId}`)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    })
+  }
+
   function formatTime(value) {
     return value ? new Date(value).toLocaleString('zh-CN') : ''
   }
@@ -1180,9 +1407,25 @@ export function useAssessmentApp() {
     await loadExamQuestions()
   })
 
+  watch(examAnswers, value => {
+    if (!selectedExamId.value) {
+      return
+    }
+    examAnswerSheets.value[selectedExamId.value] = { ...value }
+  }, { deep: true })
+
   onMounted(async () => {
+    examClockTimer = window.setInterval(() => {
+      nowTick.value = Date.now()
+    }, 1000)
     if (currentUser.value && !currentUser.value.mustChangePassword) {
       await loadAll()
+    }
+  })
+
+  onUnmounted(() => {
+    if (examClockTimer) {
+      window.clearInterval(examClockTimer)
     }
   })
 
@@ -1203,6 +1446,7 @@ export function useAssessmentApp() {
     closeQuestionManager,
     closeConfirmDialog,
     createExam,
+    generateMockResults,
     confirmDeleteAssignment,
     confirmDeleteQuestion,
     confirmDeleteSelectedQuestions,
@@ -1231,6 +1475,7 @@ export function useAssessmentApp() {
     filteredQuestions,
     filteredStudents,
     focusLogin,
+    formatDuration,
     formatTime,
     handleClassImportFileChange,
     handleQuestionImportFileChange,
@@ -1279,14 +1524,26 @@ export function useAssessmentApp() {
     selectedProfessionalClass,
     selectedProfessionalClassId,
     selectedExam,
+    selectedExamCountdownLabel,
+    selectedExamEndAt,
     selectedExamId,
+    selectedExamResult,
+    selectedExamStartAt,
+    selectedExamStatus,
+    selectedExamStatusLabel,
     selectedExamQuestionCount,
     selectedExamQuestionIds,
     selectedExamTotalScore,
     selectedExamBankQuestions,
+    examAnsweredCount,
+    examProgressPercent,
+    examUnansweredQuestions,
+    answeredExamQuestionIds,
+    canSubmitSelectedExam,
     selectedFilteredQuestionCount,
     selectedQuestionIds,
     selectedResultExamId,
+    submitDisabledReason,
     questionScore,
     questionTitle,
     questionTypes,
@@ -1315,7 +1572,7 @@ export function useAssessmentApp() {
     students,
     addStudentToSelectedTeachingAssignment,
     submitAssignmentForm,
-    submitExam,
+    submitExam: submitExamWithValidation,
     submitStudentForm,
     submitTeacherForm,
     syncSelection,
@@ -1323,6 +1580,11 @@ export function useAssessmentApp() {
     teacherForm,
     teachingAssignments,
     topbarEyebrow,
+    jumpToExamQuestion,
+    canOpenExam,
+    resolveExamStatus,
+    resolveExamStatusLabel,
+    resolveExamStatusTone,
     toggleExamQuestionSelection,
     toggleQuestionSelection,
     toggleQuestionImportGuide,

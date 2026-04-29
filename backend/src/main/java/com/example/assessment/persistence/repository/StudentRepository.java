@@ -43,6 +43,15 @@ public interface StudentRepository extends JpaRepository<StudentEntity, Long> {
             """)
     List<StudentEntity> findAllByProfessionalClassIdOrderByIdAsc(@Param("professionalClassId") Long professionalClassId);
 
+    @EntityGraph(attributePaths = {"teachingAssignments.teacherAccount", "professionalClass"})
+    @Query("""
+            select distinct s
+            from StudentEntity s
+            left join s.teachingAssignments ta
+            where s.id = :studentId
+            """)
+    Optional<StudentEntity> findDetailedById(@Param("studentId") Long studentId);
+
     Optional<StudentEntity> findByStudentNo(String studentNo);
 
     long countByTeachingAssignmentsId(Long teachingAssignmentId);

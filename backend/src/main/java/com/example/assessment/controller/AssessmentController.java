@@ -12,6 +12,7 @@ import com.example.assessment.dto.TeachingAssignmentCreateRequest;
 import com.example.assessment.dto.TeachingAssignmentUpdateRequest;
 import com.example.assessment.model.ExamPaperSummary;
 import com.example.assessment.model.ExamResult;
+import com.example.assessment.model.MockExamResultGenerationResult;
 import com.example.assessment.model.QuestionImportResult;
 import com.example.assessment.model.ProfessionalClassImportResult;
 import com.example.assessment.model.ProfessionalClassOption;
@@ -218,6 +219,14 @@ public class AssessmentController {
         return assessmentService.createExam(actor, request);
     }
 
+    @PostMapping("/exams/{examId}/mock-results")
+    public MockExamResultGenerationResult generateMockResults(@RequestHeader(value = "X-Username", required = false) String username,
+                                                              @RequestHeader(value = "X-User-Role", required = false) String role,
+                                                              @PathVariable Long examId) {
+        UserAccountEntity actor = authService.requireAnyRole(username, role, UserRole.ADMIN, UserRole.TEACHER);
+        return assessmentService.generateMockResults(actor, examId);
+    }
+
     @GetMapping("/exams/{examId}/questions")
     public List<Question> examQuestions(@RequestHeader(value = "X-Username", required = false) String username,
                                         @RequestHeader(value = "X-User-Role", required = false) String role,
@@ -263,7 +272,7 @@ public class AssessmentController {
     @GetMapping("/results")
     public List<ExamResult> results(@RequestHeader(value = "X-Username", required = false) String username,
                                     @RequestHeader(value = "X-User-Role", required = false) String role) {
-        UserAccountEntity actor = authService.requireAnyRole(username, role, UserRole.ADMIN, UserRole.TEACHER);
+        UserAccountEntity actor = authService.requireAnyRole(username, role, UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT);
         return assessmentService.listResults(actor);
     }
 

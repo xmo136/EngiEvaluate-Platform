@@ -20,6 +20,9 @@ public interface ExamResultRepository extends JpaRepository<ExamResultEntity, Lo
     @EntityGraph(attributePaths = {"student", "paper", "paper.teachingAssignment", "answers", "answers.question"})
     List<ExamResultEntity> findAllByPaperIdOrderBySubmittedAtDesc(Long paperId);
 
+    @EntityGraph(attributePaths = {"student", "paper", "paper.teachingAssignment", "answers", "answers.question"})
+    List<ExamResultEntity> findAllByStudentIdOrderBySubmittedAtDesc(Long studentId);
+
     long countByPaperId(Long paperId);
 
     long countByPaperIdAndStudentId(Long paperId, Long studentId);

@@ -18,3 +18,16 @@ spring:
     properties:
       hibernate:
         format_sql: true
+
+assessment:
+  ai-grading:
+    enabled: ${AI_GRADING_ENABLED:false}
+    api-key: ${AI_GRADING_API_KEY:}
+    base-url: ${AI_GRADING_BASE_URL:https://ai.gitee.com/v1}
+    model: ${AI_GRADING_MODEL:DeepSeek-V4-Flash}
+    timeout-seconds: ${AI_GRADING_TIMEOUT_SECONDS:45}
+    max-tokens: ${AI_GRADING_MAX_TOKENS:1024}
+    temperature: ${AI_GRADING_TEMPERATURE:0.7}
+    top-p: ${AI_GRADING_TOP_P:0.7}
+    top-k: ${AI_GRADING_TOP_K:50}
+    frequency-penalty: ${AI_GRADING_FREQUENCY_PENALTY:1}

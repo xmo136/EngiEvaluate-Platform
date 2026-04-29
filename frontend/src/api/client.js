@@ -162,6 +162,9 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(payload)
   }),
+  generateMockResults: (examId) => request(`/api/exams/${examId}/mock-results`, {
+    method: 'POST'
+  }),
   examQuestions: (examId) => request(`/api/exams/${examId}/questions`),
   results: () => request('/api/results'),
   submitExam: (payload) => request('/api/exams/submit', {

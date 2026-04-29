@@ -1,55 +1,55 @@
 # 工程教育评估平台
 
-工程教育评估平台是一个面向课程目标达成度评价的前后端分离 Web 系统。项目以工程教育认证中的课程考核、成绩统计、目标达成分析和评价报告归档为核心场景，提供管理员、教师、学生三类角色的工作台。
+工程教育评估平台是一个面向课程考核、题库管理、在线考试、成绩分析与课程目标达成评价的前后端分离 Web 系统。项目围绕工程教育认证场景设计，支持管理员、教师、学生三类角色，覆盖从基础数据维护、考试组织、阅卷复核到报告导出的完整流程。
 
 ![项目封面](frontend/public/landing-hero-campus.jpg)
 
-## 项目特点
+## 项目亮点
 
-- 角色分工：支持管理员、教师、学生三类账号，不同角色拥有独立菜单和操作权限。
-- 教学管理：管理员可维护教师账号、专业班级、学生基础信息和教学安排。
-- 题库管理：支持选择题、填空题、简答题、设计题、综合分析题等题型。
-- 在线考试：教师可基于题库组卷，学生进入对应课程考试并提交答案。
-- 自动评分：客观题自动判分，主观题根据关键词和规则生成建议分，教师可复核调整。
-- 成绩确认：教师可查看学生答题明细并确认每道题最终得分。
-- 统计分析：按分数段、题型、课程目标等维度生成达成情况分析。
-- 报告导出：基于模板导出 Excel 成绩分析表和 Word 课程目标达成评价报告。
-- 数据持久化：后端使用 MySQL 和 Spring Data JPA 保存用户、学生、题库、试卷、答题和成绩记录。
+- 多角色工作台：管理员、教师、学生拥有独立菜单和权限边界
+- 教学安排管理：维护课程、班级、教师、学生归属关系
+- 题库管理：支持题型筛选、课程目标筛选、编辑、批量删除、批量导入
+- 考试管理：教师可按课程创建考试，设置开始时间和时长，并从题库选题组卷
+- 学生考试页：先展示全部考试、状态和成绩，再点击进入答题；已截止考试不可作答
+- 自动判分：选择题自动评分，填空题和主观题支持 AI 优先评分，失败时回退到规则评分
+- 模拟答卷：教师可一键生成模拟学生答题数据，便于联调和演示
+- 阅卷复核：教师可查看学生答案、AI 评分理由，并手动调整最终分数
+- 统计分析：按成绩分布、题型、课程目标等维度生成分析结果
+- 报告导出：支持导出 Excel 成绩分析表和 Word 课程目标评价报告
 
 ## 技术栈
 
 | 层级 | 技术 |
 | --- | --- |
-| 前端 | Vue 3, Vite, ECharts, lucide-vue-next |
-| 后端 | Java 17, Spring Boot 3.2, Spring Web, Spring Data JPA |
+| 前端 | Vue 3、Vite、ECharts、lucide-vue-next |
+| 后端 | Java 17、Spring Boot 3.2、Spring Web、Spring Data JPA |
 | 数据库 | MySQL 8 |
 | 文档导出 | Apache POI |
-| 构建工具 | npm, Maven |
+| AI 阅卷 | OpenAI 兼容接口，当前可接入 `https://ai.gitee.com/v1` |
 
 ## 目录结构
 
 ```text
 .
-├── backend/                         # Spring Boot 后端
-│   ├── src/main/java/com/example/assessment/
-│   │   ├── controller/              # REST API 控制器
-│   │   ├── dto/                     # 请求和响应 DTO
-│   │   ├── model/                   # 业务模型和枚举
-│   │   ├── persistence/             # JPA 实体和 Repository
-│   │   └── service/                 # 业务服务和报告生成
-│   └── src/main/resources/
-│       ├── application.yml          # 后端配置
-│       └── templates/               # Excel / Word 导出模板
-├── frontend/                        # Vue 前端
-│   ├── public/                      # 静态图片资源
-│   └── src/
-│       ├── api/                     # API 请求封装
-│       ├── components/              # 通用组件
-│       ├── composables/             # 页面状态和业务逻辑
-│       ├── styles/                  # 全局样式
-│       └── views/                   # 管理员、教师、学生视图
-├── scripts/                         # 辅助脚本
-└── README.md
+|-- backend/                         # Spring Boot 后端
+|   |-- src/main/java/com/example/assessment/
+|   |   |-- controller/             # REST API
+|   |   |-- dto/                    # 请求 DTO
+|   |   |-- model/                  # 业务模型
+|   |   |-- persistence/            # JPA 实体与 Repository
+|   |   `-- service/                # 业务逻辑、AI 阅卷、报告导出
+|   `-- src/main/resources/
+|       |-- application.yml         # 后端配置
+|       `-- templates/              # Excel / Word 模板
+|-- frontend/                       # Vue 前端
+|   |-- public/
+|   `-- src/
+|       |-- api/                    # API 请求封装
+|       |-- components/             # 通用组件
+|       |-- composables/            # 状态与业务逻辑
+|       |-- styles/                 # 全局样式
+|       `-- views/                  # 管理员 / 教师 / 学生页面
+`-- README.md
 ```
 
 ## 环境要求
@@ -65,12 +65,10 @@
 
 ```bash
 git clone <your-repository-url>
-cd 工程教育评估平台
+cd "EngiEvaluate Platform"
 ```
 
-### 2. 准备数据库
-
-后端默认连接 `engineering_assessment` 数据库，并启用 `createDatabaseIfNotExist=true`。建议通过环境变量配置数据库账号密码。
+### 2. 配置数据库
 
 PowerShell:
 
@@ -95,17 +93,13 @@ cd backend
 mvn spring-boot:run
 ```
 
-后端服务地址：
+后端地址：
 
 ```text
 http://localhost:8080
 ```
 
-首次启动且数据库为空时，系统会自动初始化演示账号、学生名单、默认题库、试卷和部分示例成绩数据。
-
 ### 4. 启动前端
-
-另开一个终端：
 
 ```bash
 cd frontend
@@ -113,105 +107,102 @@ npm install
 npm run dev
 ```
 
-前端开发地址：
+前端地址：
 
 ```text
 http://localhost:5173
 ```
 
-Vite 已配置开发代理，前端请求 `/api` 会转发到 `http://localhost:8080`。
-
 ## 演示账号
 
 | 角色 | 用户名 | 密码 | 说明 |
 | --- | --- | --- | --- |
-| 管理员 | `admin` | `123456` | 管理教师账号、教学安排、学生信息、题库和报告 |
-| 教师 | `teacher` | `123456` | 管理课程学生、题库、考试、成绩确认和报告 |
-| 学生 | `student` | `123456` | 进入在线考试并提交答案 |
-| 学生 | `student2` | `123456` | 进入在线考试并提交答案 |
+| 管理员 | `admin` | `123456` | 管理教师账号、教学安排、学生信息、题库、报告 |
+| 教师 | `teacher` | `123456` | 管理课程学生、题库、考试、阅卷与报告 |
+| 学生 | `student` | `123456` | 参加考试并查看个人考试状态与成绩 |
+| 学生 | `student2` | `123456` | 参加考试并查看个人考试状态与成绩 |
 
-> 当前版本采用轻量演示鉴权方案：登录后前端保存用户信息，接口通过 `X-Username` 和 `X-User-Role` 请求头进行角色校验。生产环境建议升级为密码加密存储和 JWT / Session 鉴权。
+## AI 阅卷配置
 
-## 常用命令
+项目已预留 AI 阅卷能力，默认关闭。启用后：
 
-前端：
+- 选择题：按标准答案自动判分
+- 填空题：优先做精确匹配，不匹配时可交给 AI 做语义判断
+- 简答题 / 设计题 / 综合分析题：基于参考答案和评分要点调用模型评分
+- 若 AI 接口调用失败：自动回退到规则评分，保证学生可正常交卷
 
-```bash
-cd frontend
-npm install
-npm run dev
-npm run build
-npm run preview
+PowerShell:
+
+```powershell
+$env:AI_GRADING_ENABLED="true"
+$env:AI_GRADING_API_KEY="your_api_key"
+$env:AI_GRADING_BASE_URL="https://ai.gitee.com/v1"
+$env:AI_GRADING_MODEL="DeepSeek-V4-Flash"
 ```
 
-后端：
+macOS / Linux:
 
 ```bash
-cd backend
-mvn spring-boot:run
-mvn test
-mvn package
+export AI_GRADING_ENABLED="true"
+export AI_GRADING_API_KEY="your_api_key"
+export AI_GRADING_BASE_URL="https://ai.gitee.com/v1"
+export AI_GRADING_MODEL="DeepSeek-V4-Flash"
 ```
 
-## 主要 API
+说明：
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `POST` | `/api/auth/login` | 用户登录 |
-| `POST` | `/api/auth/change-password` | 修改密码 |
-| `GET` | `/api/auth/demo-accounts` | 获取演示账号 |
-| `GET` | `/api/questions` | 获取题库 |
-| `POST` | `/api/questions` | 新增题目 |
-| `PATCH` | `/api/questions/{questionId}` | 修改题目 |
-| `DELETE` | `/api/questions/{questionId}` | 删除题目 |
-| `POST` | `/api/questions/import` | 导入题目 |
-| `GET` | `/api/students` | 获取学生列表 |
-| `POST` | `/api/students` | 新增学生 |
-| `POST` | `/api/students/import` | 导入课程学生名单 |
-| `GET` | `/api/teacher-accounts` | 获取教师账号 |
-| `POST` | `/api/teacher-accounts` | 新增教师账号 |
-| `GET` | `/api/teaching-assignments` | 获取教学安排 |
-| `POST` | `/api/teaching-assignments` | 新增教学安排 |
-| `GET` | `/api/exams` | 获取试卷列表 |
-| `POST` | `/api/exams` | 创建试卷 |
-| `GET` | `/api/exams/{examId}/questions` | 获取试卷题目 |
-| `POST` | `/api/exams/submit` | 提交试卷 |
-| `GET` | `/api/results` | 获取成绩列表 |
-| `PATCH` | `/api/results/score` | 确认或修改成绩 |
-| `GET` | `/api/analysis` | 获取统计分析 |
-| `GET` | `/api/reports/score-analysis.xls` | 导出成绩分析 Excel |
-| `GET` | `/api/reports/objective-report.docx` | 导出课程目标评价 Word |
+- 不要把真实 API Key 提交到仓库
+- 教师端阅卷页会单独高亮显示 AI 评分理由，便于老师复核和改分
 
-## 数据和模板说明
+## 当前核心功能
 
-- `backend/src/main/resources/templates/score-analysis-template.xls`：成绩统计与分析 Excel 模板。
-- `backend/src/main/resources/templates/objective-report-template.docx`：课程目标达成情况评价 Word 模板。
-- 根目录中的 `.xls`、`.docx`、`.pptx` 文件是课程设计展示和样例材料，可根据需要保留或迁移到独立文档目录。
-- `.gitignore` 已排除 `backend/target/`、`frontend/node_modules/`、`frontend/dist/` 和日志文件，上传 GitHub 时无需提交构建产物和本地依赖目录。
+### 管理员端
 
-## 构建部署
+- 教师账号管理
+- 专业班级与学生基础信息维护
+- 教学安排配置
+- 题库管理
+- 报告导出
 
-前端生产构建：
+### 教师端
 
-```bash
-cd frontend
-npm run build
-```
+- 课程学生补充与移除
+- 题库筛选、编辑、批量删除
+- 考试管理面板
+- 按课程创建考试并组卷
+- 已发布考试详情查看
+- 一键生成模拟答题数据
+- 学生答卷查看与评分确认
+- AI 评分理由高亮展示
 
-后端打包：
+### 学生端
 
-```bash
-cd backend
-mvn package
-java -jar target/engineering-assessment-0.0.1-SNAPSHOT.jar
-```
+- 查看全部考试列表、状态和成绩
+- 点击进入可作答考试
+- 已截止考试禁用查看
+- 作答进度、未答题提醒、题号导航
+- 提交试卷后自动判分
 
-部署时请通过环境变量配置数据库连接，并根据实际域名、反向代理或静态资源服务方式调整前端 API 访问路径。
+## 常用接口
 
-## 后续优化方向
+- `GET /api/questions`：题库列表
+- `POST /api/questions`：新增试题
+- `DELETE /api/questions/batch`：批量删除试题
+- `GET /api/exams`：考试列表
+- `POST /api/exams`：创建考试
+- `POST /api/exams/submit`：提交试卷并判分
+- `GET /api/results`：成绩列表
+- `PATCH /api/results/score`：教师确认或修改最终分数
+- `POST /api/results/mock-generation`：生成模拟答题数据
+- `GET /api/analysis`：统计分析
 
-- 引入密码加密、JWT / Session 和更完整的权限模型。
-- 补充单元测试、接口测试和端到端测试。
-- 增加导入模板下载、导入错误明细和批量数据校验。
-- 支持更多课程、专业和评价指标的配置化管理。
-- 增加 Docker Compose，简化 MySQL、后端和前端的一键启动。
+## 后续可继续扩展
+
+- 更完整的权限体系，如 JWT / Session / RBAC
+- 更细粒度的课程目标达成度分析
+- 试卷模板、随机组卷和防作弊能力
+- 更强的 AI 阅卷策略，如评分 rubric、近义表达识别、教师复核建议
+
+## License
+
+This project is for course design, demo, and learning purposes.
