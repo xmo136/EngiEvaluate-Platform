@@ -294,8 +294,9 @@ public class AssessmentController {
 
     @GetMapping("/analysis")
     public AnalysisSummary analysis(@RequestHeader(value = "X-Username", required = false) String username,
-                                    @RequestHeader(value = "X-User-Role", required = false) String role) {
+                                    @RequestHeader(value = "X-User-Role", required = false) String role,
+                                    @RequestParam(value = "teachingAssignmentId", required = false) Long teachingAssignmentId) {
         UserAccountEntity actor = authService.requireAnyRole(username, role, UserRole.ADMIN, UserRole.TEACHER);
-        return assessmentService.analysis(actor);
+        return assessmentService.analysis(actor, teachingAssignmentId);
     }
 }

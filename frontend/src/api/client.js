@@ -1,5 +1,14 @@
 const API_BASE = ''
 
+function withQuery(path, params = {}) {
+  const entries = Object.entries(params).filter(([, value]) => value !== null && value !== undefined && value !== '')
+  if (!entries.length) {
+    return path
+  }
+  const query = new URLSearchParams(entries).toString()
+  return `${path}${path.includes('?') ? '&' : '?'}${query}`
+}
+
 function authHeaders() {
   const raw = localStorage.getItem('assessment_user')
   if (!raw) {
@@ -175,7 +184,7 @@ export const api = {
     method: 'PATCH',
     body: JSON.stringify(payload)
   }),
-  analysis: () => request('/api/analysis')
+  analysis: (teachingAssignmentId) => request(withQuery('/api/analysis', { teachingAssignmentId }))
 }
 
 export async function downloadReport(path) {

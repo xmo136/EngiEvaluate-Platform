@@ -105,13 +105,13 @@ public class OpenAiGradingService {
                 matchedPoints = String.join("; ", matchedPointList);
             }
 
-            StringBuilder suggestion = new StringBuilder("AI grading note: ");
-            suggestion.append(rationale.isBlank() ? "Scored by the configured model" : rationale);
+            StringBuilder suggestion = new StringBuilder("AI评阅：");
+            suggestion.append(rationale.isBlank() ? "模型已根据参考答案与评分要点完成评分" : rationale);
             if (question.getType() == QuestionType.FILL_BLANK) {
-                suggestion.append(semanticMatch ? "; semantic match accepted" : "; semantic match not accepted");
+                suggestion.append(semanticMatch ? "；语义判定通过" : "；语义判定未通过");
             }
             if (!matchedPoints.isBlank()) {
-                suggestion.append("; matched points: ").append(matchedPoints);
+                suggestion.append("；命中要点：").append(matchedPoints);
             }
             return Optional.of(new AiGradingDecision(score, suggestion.toString()));
         } catch (IOException | InterruptedException ex) {
@@ -142,36 +142,36 @@ public class OpenAiGradingService {
     private String buildSystemPrompt(QuestionEntity question) {
         if (question.getType() == QuestionType.FILL_BLANK) {
             return """
-                    You are a rigorous exam grader.
-                    Evaluate whether a fill-in-the-blank answer is semantically equivalent to the reference answer.
-                    Allow synonyms, paraphrases, and equivalent technical terms.
-                    Return only a JSON object.
-                    For fill-in-the-blank questions, award either 0 or full credit only.
-                    The JSON schema is:
+                    你是一名严谨的中文考试阅卷助手。
+                    请判断填空题答案是否与参考答案语义等价，可以接受近义表达、同义术语和常见技术表述变体。
+                    只返回 JSON 对象，不要输出额外说明。
+                    填空题只能给 0 分或满分。
+                    rationale 字段必须使用中文。
+                    JSON 结构如下：
                     {"awardedScore": integer, "semanticMatch": boolean, "rationale": string, "matchedPoints": string[]}
                     """;
         }
         return """
-                You are a rigorous exam grader.
-                Score the student's answer against the reference answer and scoring guidance.
-                Prioritize coverage of key points, factual accuracy, and relevance to the question.
-                Return only a JSON object.
-                The JSON schema is:
+                你是一名严谨的中文考试阅卷助手。
+                请根据参考答案和评分要点为学生答案评分，优先考虑关键点覆盖、内容准确性和与题目要求的相关性。
+                只返回 JSON 对象，不要输出额外说明。
+                rationale 字段必须使用中文。
+                JSON 结构如下：
                 {"awardedScore": integer, "semanticMatch": boolean, "rationale": string, "matchedPoints": string[]}
                 """;
     }
 
     private String buildUserPrompt(QuestionEntity question, String studentAnswer) {
         return """
-                Grade the answer using the following information:
+                请基于以下信息完成评分：
 
-                Question type: %s
-                Question: %s
-                Max score: %s
-                Objective: %s
-                Reference answer: %s
-                Scoring guidance: %s
-                Student answer: %s
+                题型：%s
+                题目：%s
+                满分：%s
+                课程目标：%s
+                参考答案：%s
+                评分要点：%s
+                学生答案：%s
                 """.formatted(
                 question.getType(),
                 safe(question.getTitle()),

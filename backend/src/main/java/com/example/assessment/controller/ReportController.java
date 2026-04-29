@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -30,10 +31,11 @@ public class ReportController {
 
     @GetMapping({"/score-analysis.xls", "/score-analysis.xlsx"})
     public ResponseEntity<byte[]> scoreAnalysis(@RequestHeader(value = "X-Username", required = false) String username,
-                                                @RequestHeader(value = "X-User-Role", required = false) String role) throws IOException {
-        authService.requireAnyRole(username, role, UserRole.ADMIN, UserRole.TEACHER);
+                                                @RequestHeader(value = "X-User-Role", required = false) String role,
+                                                @RequestParam(value = "teachingAssignmentId", required = false) Long teachingAssignmentId) throws IOException {
+        var actor = authService.requireAnyRole(username, role, UserRole.ADMIN, UserRole.TEACHER);
         return download(
-                reportService.buildScoreAnalysisExcel(),
+                reportService.buildScoreAnalysisExcel(actor, teachingAssignmentId),
                 "score-analysis.xls",
                 "application/vnd.ms-excel"
         );
@@ -41,10 +43,11 @@ public class ReportController {
 
     @GetMapping("/objective-report.docx")
     public ResponseEntity<byte[]> objectiveReport(@RequestHeader(value = "X-Username", required = false) String username,
-                                                  @RequestHeader(value = "X-User-Role", required = false) String role) throws IOException {
-        authService.requireAnyRole(username, role, UserRole.ADMIN, UserRole.TEACHER);
+                                                  @RequestHeader(value = "X-User-Role", required = false) String role,
+                                                  @RequestParam(value = "teachingAssignmentId", required = false) Long teachingAssignmentId) throws IOException {
+        var actor = authService.requireAnyRole(username, role, UserRole.ADMIN, UserRole.TEACHER);
         return download(
-                reportService.buildObjectiveReportDocx(),
+                reportService.buildObjectiveReportDocx(actor, teachingAssignmentId),
                 "objective-report.docx",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         );

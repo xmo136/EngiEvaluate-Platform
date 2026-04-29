@@ -362,11 +362,34 @@ public class AssessmentService {
     }
 
     @Transactional(readOnly = true)
+    public List<Student> listStudents(UserAccountEntity actor, Long teachingAssignmentId) {
+        if (teachingAssignmentId == null) {
+            return listStudents(actor);
+        }
+        loadAssignmentForActor(teachingAssignmentId, actor);
+        return listStudents(actor).stream()
+                .filter(student -> student.getTeachingAssignmentIds() != null && student.getTeachingAssignmentIds().contains(teachingAssignmentId))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<Student> listStudents() {
         List<StudentEntity> entities = studentRepository.findAllByOrderByIdAsc();
         Map<Long, UserAccountEntity> accountsByStudentId = studentAccountsByStudentId(entities);
         return entities.stream()
                 .map(student -> toStudent(student, accountsByStudentId.get(student.getId())))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<Student> listStudents(Long teachingAssignmentId) {
+        if (teachingAssignmentId == null) {
+            return listStudents();
+        }
+        teachingAssignmentRepository.findById(teachingAssignmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teaching assignment not found"));
+        return listStudents().stream()
+                .filter(student -> student.getTeachingAssignmentIds() != null && student.getTeachingAssignmentIds().contains(teachingAssignmentId))
                 .toList();
     }
 
@@ -762,7 +785,7 @@ public class AssessmentService {
                 continue;
             }
             Map<Long, String> mockAnswers = buildMockAnswers(questions, simulationIndex++);
-            createExamResult(exam, student, questions, mockAnswers, mockSubmittedAt(exam, simulationIndex));
+            createExamResult(exam, student, questions, mockAnswers, mockSubmittedAt(exam, simulationIndex), false);
             createdCount++;
         }
 
@@ -799,9 +822,32 @@ public class AssessmentService {
     }
 
     @Transactional(readOnly = true)
+    public List<ExamResult> listResults(UserAccountEntity actor, Long teachingAssignmentId) {
+        if (teachingAssignmentId == null) {
+            return listResults(actor);
+        }
+        loadAssignmentForActor(teachingAssignmentId, actor);
+        return listResults(actor).stream()
+                .filter(result -> Objects.equals(result.getTeachingAssignmentId(), teachingAssignmentId))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<ExamResult> listResults() {
         return examResultRepository.findAllByOrderBySubmittedAtDesc().stream()
                 .map(this::toExamResult)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ExamResult> listResults(Long teachingAssignmentId) {
+        if (teachingAssignmentId == null) {
+            return listResults();
+        }
+        teachingAssignmentRepository.findById(teachingAssignmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teaching assignment not found"));
+        return listResults().stream()
+                .filter(result -> Objects.equals(result.getTeachingAssignmentId(), teachingAssignmentId))
                 .toList();
     }
 
@@ -840,7 +886,7 @@ public class AssessmentService {
         List<QuestionEntity> questions = questionRepository.findAllByPaperIdOrderBySortOrderAscIdAsc(paper.getId());
 
         Map<Long, String> submittedAnswers = request.answers() == null ? Map.of() : request.answers();
-        return toExamResult(createExamResult(paper, student, questions, submittedAnswers, LocalDateTime.now()));
+        return toExamResult(createExamResult(paper, student, questions, submittedAnswers, LocalDateTime.now(), true));
     }
 
     @Transactional
@@ -867,7 +913,7 @@ public class AssessmentService {
         int maxScore = record.getQuestion().getScore();
         int confirmedScore = Math.max(0, Math.min(maxScore, request.score()));
         record.setScore(confirmedScore);
-        record.setSuggestion("Teacher confirmed final score: " + confirmedScore);
+        record.setSuggestion("教师已确认最终得分：" + confirmedScore + " 分");
         recalculateResult(result);
         return toExamResult(result);
     }
@@ -879,9 +925,20 @@ public class AssessmentService {
 
     @Transactional(readOnly = true)
     public AnalysisSummary analysis(UserAccountEntity actor) {
-        List<Student> students = actor == null ? listStudents() : listStudents(actor);
-        List<Question> questions = listQuestions();
-        List<ExamResult> results = actor == null ? listResults() : listResults(actor);
+        return analysis(actor, null);
+    }
+
+    @Transactional(readOnly = true)
+    public AnalysisSummary analysis(UserAccountEntity actor, Long teachingAssignmentId) {
+        List<Student> students = actor == null
+                ? listStudents(teachingAssignmentId)
+                : listStudents(actor, teachingAssignmentId);
+        List<Question> questions = actor == null
+                ? listAnalysisQuestions(teachingAssignmentId)
+                : listAnalysisQuestions(actor, teachingAssignmentId);
+        List<ExamResult> results = actor == null
+                ? listResults(teachingAssignmentId)
+                : listResults(actor, teachingAssignmentId);
 
         double average = results.stream()
                 .mapToInt(ExamResult::getTotalScore)
@@ -924,8 +981,16 @@ public class AssessmentService {
 
     @Transactional(readOnly = true)
     public Map<CourseObjective, Integer> objectiveFullScores() {
+        return objectiveFullScores(null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<CourseObjective, Integer> objectiveFullScores(UserAccountEntity actor, Long teachingAssignmentId) {
         Map<CourseObjective, Integer> fullScores = new EnumMap<>(CourseObjective.class);
-        for (Question question : listQuestions()) {
+        List<Question> questions = actor == null
+                ? listAnalysisQuestions(teachingAssignmentId)
+                : listAnalysisQuestions(actor, teachingAssignmentId);
+        for (Question question : questions) {
             fullScores.merge(question.getObjective(), question.getScore(), Integer::sum);
         }
         return fullScores;
@@ -1419,7 +1484,8 @@ public class AssessmentService {
                                               StudentEntity student,
                                               List<QuestionEntity> questions,
                                               Map<Long, String> submittedAnswers,
-                                              LocalDateTime submittedAt) {
+                                              LocalDateTime submittedAt,
+                                              boolean allowAiGrading) {
         ExamResultEntity result = new ExamResultEntity();
         result.setPaper(paper);
         result.setStudent(student);
@@ -1430,7 +1496,7 @@ public class AssessmentService {
         int total = 0;
         for (QuestionEntity question : questions) {
             String answer = submittedAnswers.getOrDefault(question.getId(), "");
-            GradingDecision gradingDecision = gradeAnswer(question, answer);
+            GradingDecision gradingDecision = gradeAnswer(question, answer, allowAiGrading);
             total += gradingDecision.score();
 
             AnswerRecordEntity record = new AnswerRecordEntity();
@@ -1498,7 +1564,7 @@ public class AssessmentService {
         return baseTime.isAfter(LocalDateTime.now()) ? LocalDateTime.now().minusMinutes(1) : baseTime;
     }
 
-    private GradingDecision gradeAnswer(QuestionEntity question, String answer) {
+    private GradingDecision gradeAnswer(QuestionEntity question, String answer, boolean allowAiGrading) {
         String normalized = normalize(answer);
         String expected = normalize(question.getAnswer());
 
@@ -1508,15 +1574,19 @@ public class AssessmentService {
         }
 
         if (question.getType() == QuestionType.FILL_BLANK && normalized.equals(expected)) {
-            return new GradingDecision(question.getScore(), "Auto-scored as a full-credit exact match");
+            return new GradingDecision(question.getScore(), "系统判定：与标准答案完全匹配，给满分");
         }
 
         if (normalized.isBlank()) {
-            return new GradingDecision(0, "Student answer is blank");
+            return new GradingDecision(0, "学生未作答，本题记 0 分");
         }
 
         int heuristicScore = grade(question, answer);
         String heuristicSuggestion = suggestion(question, heuristicScore);
+
+        if (!allowAiGrading) {
+            return new GradingDecision(heuristicScore, heuristicSuggestion);
+        }
 
         return openAiGradingService.gradeQuestion(question, answer)
                 .map(decision -> new GradingDecision(
@@ -1552,12 +1622,12 @@ public class AssessmentService {
 
     private String suggestion(QuestionEntity question, int score) {
         if (score == question.getScore()) {
-            return "Auto-scored as a full-credit answer";
+            return "系统判定：答案满足得分要求，给满分";
         }
         if (question.getType() == QuestionType.SINGLE_CHOICE || question.getType() == QuestionType.FILL_BLANK) {
-            return "Objective answer mismatch, fallback rule-based grading applied";
+            return "系统判定：与标准答案不一致，按规则记分";
         }
-        return "Fallback heuristic score: " + score + ". Expected key points: " + question.getAnswer();
+        return "系统判定：按规则估算得分 " + score + " 分。参考要点：" + question.getAnswer();
     }
 
     private List<String> buildSuggestions(Map<String, Double> objectiveAverage, double average) {
@@ -1613,6 +1683,34 @@ public class AssessmentService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected record is not an exam");
         }
         return exam;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Question> listAnalysisQuestions(UserAccountEntity actor, Long teachingAssignmentId) {
+        if (teachingAssignmentId == null) {
+            return listQuestions();
+        }
+        loadAssignmentForActor(teachingAssignmentId, actor);
+        return listAnalysisQuestions(teachingAssignmentId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Question> listAnalysisQuestions(Long teachingAssignmentId) {
+        if (teachingAssignmentId == null) {
+            return listQuestions();
+        }
+        teachingAssignmentRepository.findById(teachingAssignmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teaching assignment not found"));
+        List<ExamPaperEntity> exams = examPaperRepository.findAllByPaperTypeAndTeachingAssignmentIdOrderByStartTimeDescIdDesc(
+                ExamPaperType.EXAM,
+                teachingAssignmentId
+        );
+        if (exams.isEmpty()) {
+            return List.of();
+        }
+        return questionRepository.findAllByPaperIdOrderBySortOrderAscIdAsc(exams.get(0).getId()).stream()
+                .map(this::toQuestion)
+                .toList();
     }
 
     private List<QuestionEntity> loadBankQuestions(ExamPaperEntity bankPaper, List<Long> questionIds) {

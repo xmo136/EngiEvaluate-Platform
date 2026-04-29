@@ -1,6 +1,27 @@
 <template>
   <AppShell>
     <section v-if="activeView === 'dashboard'" class="view">
+      <div class="panel">
+        <div class="panel-title">
+          <h3>统计范围</h3>
+          <span>先选择课程与教学班，再查看对应统计结果。</span>
+        </div>
+        <div class="assignment-summary">
+          <label>
+            课程 / 教学班
+            <select v-model.number="selectedTeachingAssignmentId">
+              <option v-for="item in teachingAssignments" :key="item.id" :value="item.id">
+                {{ item.courseName }} / {{ item.className }} / {{ item.teacherName }}
+              </option>
+            </select>
+          </label>
+          <div v-if="selectedTeachingAssignment" class="status-pill">
+            <strong>{{ selectedTeachingAssignment.courseName }}</strong>
+            <span>{{ selectedTeachingAssignment.className }} / {{ selectedTeachingAssignment.teacherName }}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="kpi-grid">
         <div class="metric">
           <span>学生人数</span>
@@ -16,7 +37,7 @@
         </div>
         <div class="metric">
           <span>成绩记录</span>
-          <strong>{{ results.length }}</strong>
+          <strong>{{ selectedTeachingAssignmentResults.length }}</strong>
         </div>
       </div>
 
@@ -428,6 +449,27 @@
     </section>
 
     <section v-if="activeView === 'reports'" class="view">
+      <div class="panel">
+        <div class="panel-title">
+          <h3>导出范围</h3>
+          <span>报告和导出文件会按当前选择的课程与教学班生成。</span>
+        </div>
+        <div class="assignment-summary">
+          <label>
+            课程 / 教学班
+            <select v-model.number="selectedTeachingAssignmentId">
+              <option v-for="item in teachingAssignments" :key="item.id" :value="item.id">
+                {{ item.courseName }} / {{ item.className }} / {{ item.teacherName }}
+              </option>
+            </select>
+          </label>
+          <div v-if="selectedTeachingAssignment" class="status-pill">
+            <strong>{{ selectedTeachingAssignment.courseName }}</strong>
+            <span>{{ selectedTeachingAssignment.className }} / {{ selectedTeachingAssignment.teacherName }}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="report-layout">
         <div class="panel report-panel">
           <FileSpreadsheet :size="32" />
@@ -518,6 +560,9 @@ const {
   selectedFilteredQuestionCount,
   selectedProfessionalClass,
   selectedProfessionalClassId,
+  selectedTeachingAssignment,
+  selectedTeachingAssignmentId,
+  selectedTeachingAssignmentResults,
   selectedQuestionIds,
   startEditAssignment,
   startEditQuestion,

@@ -6,6 +6,7 @@ import com.example.assessment.model.CourseObjective;
 import com.example.assessment.model.ExamResult;
 import com.example.assessment.model.Question;
 import com.example.assessment.model.Student;
+import com.example.assessment.persistence.entity.UserAccountEntity;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -44,13 +45,16 @@ public class ReportService {
         this.assessmentService = assessmentService;
     }
 
-    public byte[] buildScoreAnalysisExcel() throws IOException {
+    public byte[] buildScoreAnalysisExcel(UserAccountEntity actor, Long teachingAssignmentId) throws IOException {
         try (InputStream inputStream = new ClassPathResource(SCORE_ANALYSIS_TEMPLATE).getInputStream();
              Workbook workbook = WorkbookFactory.create(inputStream);
              ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.getSheetAt(0);
-            fillExcelStudents(sheet);
-            fillExcelQuestionMapping(sheet);
+            List<Student> students = assessmentService.listStudents(actor, teachingAssignmentId);
+            List<Question> questions = assessmentService.listAnalysisQuestions(actor, teachingAssignmentId);
+            Map<Long, ExamResult> latestResults = latestResultsByStudent(actor, teachingAssignmentId);
+            fillExcelStudents(sheet, students, questions, latestResults);
+            fillExcelQuestionMapping(sheet, questions);
             fillExcelSummaryFormulas(sheet);
             workbook.setForceFormulaRecalculation(true);
             workbook.write(outputStream);
@@ -58,20 +62,29 @@ public class ReportService {
         }
     }
 
-    public byte[] buildObjectiveReportDocx() throws IOException {
+    public byte[] buildObjectiveReportDocx(UserAccountEntity actor, Long teachingAssignmentId) throws IOException {
         try (InputStream inputStream = new ClassPathResource(OBJECTIVE_REPORT_TEMPLATE).getInputStream();
              XWPFDocument document = new XWPFDocument(inputStream);
              ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
-            fillWordReport(document);
+            fillWordReport(document, actor, teachingAssignmentId);
             document.write(outputStream);
             return outputStream.toByteArray();
         }
     }
 
-    private void fillExcelStudents(Sheet sheet) {
-        List<Student> students = assessmentService.listStudents();
-        List<Question> questions = assessmentService.listQuestions();
-        Map<Long, ExamResult> latestResults = latestResultsByStudent();
+    private void fillExcelStudents(Sheet sheet,
+                                   List<Student> students,
+                                   List<Question> questions,
+                                   Map<Long, ExamResult> latestResults) {
+        String scopedCourseName = questions.stream()
+                .map(Question::getCourseName)
+                .filter(name -> name != null && !name.isBlank())
+                .findFirst()
+                .orElseGet(() -> latestResults.values().stream()
+                        .map(ExamResult::getCourseName)
+                        .filter(name -> name != null && !name.isBlank())
+                        .findFirst()
+                        .orElse(""));
 
         for (int rowIndex = FIRST_STUDENT_ROW; rowIndex <= LAST_STUDENT_ROW; rowIndex++) {
             Row row = getRow(sheet, rowIndex);
@@ -88,7 +101,9 @@ public class ReportService {
             setCell(row, 2, "计算机科学与技术学院");
             setCell(row, 3, student.getClassName());
             setCell(row, 4, "2018");
-            setCell(row, 5, "软件项目策划与管理");
+            setCell(row, 5, result == null || result.getCourseName() == null || result.getCourseName().isBlank()
+                    ? scopedCourseName
+                    : result.getCourseName());
 
             for (int col = FIRST_SCORE_COL; col <= LAST_SCORE_COL; col++) {
                 setBlank(row, col);
@@ -124,8 +139,7 @@ public class ReportService {
         }
     }
 
-    private void fillExcelQuestionMapping(Sheet sheet) {
-        List<Question> questions = assessmentService.listQuestions();
+    private void fillExcelQuestionMapping(Sheet sheet, List<Question> questions) {
         Row header = getRow(sheet, 2);
         Row obj1 = getRow(sheet, 105);
         Row obj2 = getRow(sheet, 106);
@@ -166,15 +180,15 @@ public class ReportService {
         setFormula(getRow(sheet, 109), 36, "SUM(AK106:AK109)");
     }
 
-    private void fillWordReport(XWPFDocument document) {
+    private void fillWordReport(XWPFDocument document, UserAccountEntity actor, Long teachingAssignmentId) {
         if (document.getTables().isEmpty()) {
             return;
         }
         XWPFTable table = document.getTables().get(0);
-        List<Student> students = assessmentService.listStudents();
-        List<ExamResult> results = assessmentService.listResults();
-        AnalysisSummary analysis = assessmentService.analysis();
-        Map<CourseObjective, Double> attainment = objectiveAttainment();
+        List<Student> students = assessmentService.listStudents(actor, teachingAssignmentId);
+        List<ExamResult> results = assessmentService.listResults(actor, teachingAssignmentId);
+        AnalysisSummary analysis = assessmentService.analysis(actor, teachingAssignmentId);
+        Map<CourseObjective, Double> attainment = objectiveAttainment(actor, teachingAssignmentId);
 
         setCellText(table, 4, 1, String.valueOf(students.size()));
         fillScoreDistribution(table, results);
@@ -195,17 +209,17 @@ public class ReportService {
                 + "持续改进：强化项目活动分解、资源分配和关键路径分析训练。");
     }
 
-    private Map<Long, ExamResult> latestResultsByStudent() {
+    private Map<Long, ExamResult> latestResultsByStudent(UserAccountEntity actor, Long teachingAssignmentId) {
         Map<Long, ExamResult> map = new LinkedHashMap<>();
-        for (ExamResult result : assessmentService.listResults()) {
+        for (ExamResult result : assessmentService.listResults(actor, teachingAssignmentId)) {
             map.putIfAbsent(result.getStudent().getId(), result);
         }
         return map;
     }
 
-    private Map<CourseObjective, Double> objectiveAttainment() {
-        List<ExamResult> results = assessmentService.listResults();
-        Map<CourseObjective, Integer> fullScores = assessmentService.objectiveFullScores();
+    private Map<CourseObjective, Double> objectiveAttainment(UserAccountEntity actor, Long teachingAssignmentId) {
+        List<ExamResult> results = assessmentService.listResults(actor, teachingAssignmentId);
+        Map<CourseObjective, Integer> fullScores = assessmentService.objectiveFullScores(actor, teachingAssignmentId);
         Map<CourseObjective, Double> attainment = new EnumMap<>(CourseObjective.class);
         for (CourseObjective objective : CourseObjective.values()) {
             int fullScore = Math.max(1, fullScores.getOrDefault(objective, 0));

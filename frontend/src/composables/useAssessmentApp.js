@@ -116,6 +116,9 @@ export function useAssessmentApp() {
   const questionTypeFilter = ref('ALL')
   const questionObjectiveFilter = ref('ALL')
   const selectedQuestionIds = ref([])
+  const mockResultGenerating = ref(false)
+  const mockResultFeedback = ref('')
+  const mockResultFeedbackTone = ref('muted')
   const scoreChartRef = ref(null)
   const typeChartRef = ref(null)
   const examStartedAt = ref(new Date().toLocaleString('zh-CN'))
@@ -259,6 +262,12 @@ export function useAssessmentApp() {
     }
     return results.value.filter(result => result.examId === selectedResultExamId.value)
   })
+  const selectedTeachingAssignmentResults = computed(() => {
+    if (!selectedTeachingAssignmentId.value) {
+      return results.value
+    }
+    return results.value.filter(result => result.teachingAssignmentId === selectedTeachingAssignmentId.value)
+  })
   const selectedExamResult = computed(() =>
     results.value.find(result => result.examId === selectedExamId.value) ?? null
   )
@@ -333,7 +342,7 @@ export function useAssessmentApp() {
     return ''
   })
   const topbarEyebrow = computed(() => {
-    if (isTeacher.value && selectedTeachingAssignment.value) {
+    if (selectedTeachingAssignment.value && ['dashboard', 'students', 'exam', 'results', 'reports'].includes(activeView.value)) {
       return `${selectedTeachingAssignment.value.courseName} / ${selectedTeachingAssignment.value.className}`
     }
     return '高校课程评估与考试管理'
@@ -765,13 +774,12 @@ export function useAssessmentApp() {
     }
     clearFeedback()
     try {
-      const [questionData, studentData, assignmentData, examData, resultData, analysisData, teacherData, classData] = await Promise.all([
+      const [questionData, studentData, assignmentData, examData, resultData, teacherData, classData] = await Promise.all([
         api.questions(),
         api.students(),
         canView('teaching') || canView('students') ? api.teachingAssignments() : Promise.resolve([]),
         canView('exam') ? api.exams() : Promise.resolve([]),
         (canView('results') || currentUser.value?.role === 'STUDENT') ? api.results() : Promise.resolve([]),
-        canView('dashboard') || canView('reports') ? api.analysis() : Promise.resolve(null),
         isAdmin.value ? api.teacherAccounts() : Promise.resolve([]),
         isAdmin.value ? api.professionalClasses() : Promise.resolve([])
       ])
@@ -786,10 +794,14 @@ export function useAssessmentApp() {
       teachingAssignments.value = assignmentData
       exams.value = examData
       results.value = resultData
-      analysis.value = analysisData
       teacherAccounts.value = teacherData
       professionalClasses.value = classData
       syncSelection()
+      if (canView('dashboard') || canView('reports')) {
+        analysis.value = await api.analysis(selectedTeachingAssignmentId.value)
+      } else {
+        analysis.value = null
+      }
       if (isTeacher.value) {
         await loadCandidateStudents()
       }
@@ -1058,15 +1070,42 @@ export function useAssessmentApp() {
 
   async function generateMockResults(examId = selectedExamId.value) {
     if (!examId) {
+      mockResultFeedback.value = '请先选择一场考试。'
+      mockResultFeedbackTone.value = 'danger'
       setError(new Error('请先选择一场考试'))
       return
     }
+    mockResultGenerating.value = true
+    mockResultFeedback.value = ''
+    mockResultFeedbackTone.value = 'muted'
     try {
       const result = await api.generateMockResults(examId)
       await loadAll()
-      setSuccess(result.messages?.join('；') || `已生成 ${result.createdCount} 份模拟答卷`)
+      selectedResultExamId.value = examId
+      const createdCount = Number(result?.createdCount || 0)
+      const skippedCount = Number(result?.skippedCount || 0)
+      const parts = []
+
+      if (createdCount > 0) {
+        parts.push(`已生成 ${createdCount} 份模拟答卷`)
+      }
+      if (skippedCount > 0) {
+        parts.push(`跳过 ${skippedCount} 名已提交学生`)
+      }
+      if (!parts.length) {
+        parts.push('当前没有可生成的模拟答卷')
+      }
+
+      const feedback = parts.join('，')
+      mockResultFeedback.value = feedback
+      mockResultFeedbackTone.value = createdCount > 0 ? 'success' : 'warning'
+      setSuccess(feedback)
     } catch (error) {
+      mockResultFeedback.value = error?.message || '生成模拟答卷失败，请稍后重试。'
+      mockResultFeedbackTone.value = 'danger'
       setError(error, '生成模拟答卷失败')
+    } finally {
+      mockResultGenerating.value = false
     }
   }
 
@@ -1372,10 +1411,30 @@ export function useAssessmentApp() {
 
   async function download(path) {
     try {
-      await downloadReport(path)
+      await downloadReport(appendTeachingAssignmentQuery(path))
     } catch (error) {
       setError(error, '下载报告失败')
     }
+  }
+
+  async function refreshAnalysis() {
+    if (!currentUser.value || currentUser.value.mustChangePassword) {
+      return
+    }
+    if (!(canView('dashboard') || canView('reports'))) {
+      return
+    }
+    analysis.value = await api.analysis(selectedTeachingAssignmentId.value)
+    await nextTick()
+    renderCharts()
+  }
+
+  function appendTeachingAssignmentQuery(path) {
+    if (!path.startsWith('/api/reports/') || !selectedTeachingAssignmentId.value) {
+      return path
+    }
+    const separator = path.includes('?') ? '&' : '?'
+    return `${path}${separator}teachingAssignmentId=${encodeURIComponent(selectedTeachingAssignmentId.value)}`
   }
 
   watch(activeView, async () => {
@@ -1400,6 +1459,11 @@ export function useAssessmentApp() {
         examForm.value.teachingAssignmentId = selectedTeachingAssignmentId.value
       }
       await loadCandidateStudents()
+    }
+    try {
+      await refreshAnalysis()
+    } catch (error) {
+      setError(error, '加载统计分析失败')
     }
   })
 
@@ -1502,6 +1566,9 @@ export function useAssessmentApp() {
     loginError,
     loginForm,
     loginUsernameRef,
+    mockResultFeedback,
+    mockResultFeedbackTone,
+    mockResultGenerating,
     logoSrc,
     logoVisible,
     newQuestion,
@@ -1561,6 +1628,7 @@ export function useAssessmentApp() {
     selectedStudentId,
     selectedTeachingAssignment,
     selectedTeachingAssignmentId,
+    selectedTeachingAssignmentResults,
     setError,
     setSuccess,
     startEditAssignment,

@@ -1119,6 +1119,34 @@ textarea {
   margin-top: 0;
 }
 
+.teacher-inline-feedback {
+  margin: 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.teacher-inline-feedback.success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.teacher-inline-feedback.warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.teacher-inline-feedback.danger {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.teacher-inline-feedback.muted {
+  background: #e2e8f0;
+  color: #475569;
+}
+
 .teacher-preview-stack {
   display: grid;
   gap: 14px;
@@ -1422,6 +1450,23 @@ th {
   background: #fff;
 }
 
+.teacher-result-card--selectable {
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.teacher-result-card--selectable:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
+  transform: translateY(-1px);
+}
+
+.teacher-result-card--selectable.active {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+  background: #f8fbff;
+}
+
 .teacher-result-score {
   min-width: 72px;
   display: grid;
@@ -1447,6 +1492,31 @@ th {
 
 .teacher-result-grid {
   margin-top: 18px;
+}
+
+.teacher-review-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 18px;
+  align-items: start;
+}
+
+.teacher-review-list-panel,
+.teacher-paper-panel {
+  min-height: 640px;
+}
+
+.teacher-review-list {
+  display: grid;
+  gap: 12px;
+  max-height: 720px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.teacher-result-card--row {
+  gap: 10px;
 }
 
 .teacher-score-card {
@@ -1489,6 +1559,11 @@ th {
 .teacher-preview-row {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+}
+
+.teacher-paper-panel .answer-list {
+  display: grid;
+  gap: 12px;
 }
 
 .report-panel h3 {
@@ -1697,6 +1772,7 @@ th {
   .student-grid,
   .report-layout,
   .result-grid,
+  .teacher-review-layout,
   .exam-meta,
   .assignment-summary,
   .teacher-summary-grid,

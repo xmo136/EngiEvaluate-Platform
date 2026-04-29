@@ -1,6 +1,27 @@
 <template>
   <AppShell>
     <section v-if="activeView === 'dashboard'" class="view">
+      <div class="panel">
+        <div class="panel-title">
+          <h3>统计范围</h3>
+          <span>先选择课程与教学班，再查看对应统计结果。</span>
+        </div>
+        <div class="assignment-summary">
+          <label>
+            课程 / 教学班
+            <select v-model.number="selectedTeachingAssignmentId">
+              <option v-for="item in teachingAssignments" :key="item.id" :value="item.id">
+                {{ item.courseName }} / {{ item.className }} / {{ item.teacherName }}
+              </option>
+            </select>
+          </label>
+          <div v-if="selectedTeachingAssignment" class="status-pill">
+            <strong>{{ selectedTeachingAssignment.courseName }}</strong>
+            <span>{{ selectedTeachingAssignment.className }} / {{ selectedTeachingAssignment.teacherName }}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="kpi-grid">
         <div class="metric">
           <span>学生人数</span>
@@ -16,7 +37,7 @@
         </div>
         <div class="metric">
           <span>提交记录</span>
-          <strong>{{ results.length }}</strong>
+          <strong>{{ selectedTeachingAssignmentResults.length }}</strong>
         </div>
       </div>
 
@@ -498,11 +519,19 @@
                 </div>
               </div>
               <div class="teacher-action-row teacher-action-row--start">
-                <button class="primary-button compact-button" type="button" @click="generateMockResults(selectedExam.id)">
+                <button
+                  class="primary-button compact-button"
+                  type="button"
+                  :disabled="mockResultGenerating"
+                  @click="generateMockResults(selectedExam.id)"
+                >
                   <ClipboardList :size="16" />
-                  <span>生成模拟答卷</span>
+                  <span>{{ mockResultGenerating ? '生成中...' : '生成模拟答卷' }}</span>
                 </button>
               </div>
+              <p v-if="mockResultFeedback" class="teacher-inline-feedback" :class="mockResultFeedbackTone">
+                {{ mockResultFeedback }}
+              </p>
               <div v-if="publishedQuestionTypeSummary.length" class="teacher-pill-list">
                 <span v-for="item in publishedQuestionTypeSummary" :key="`published-${item.type}`" class="teacher-pill">
                   {{ item.label }} {{ item.count }} 题
@@ -564,53 +593,67 @@
           </article>
         </div>
 
-        <div v-if="filteredResults.length" class="teacher-result-board">
-          <article v-for="result in filteredResults" :key="`summary-${result.id}`" class="teacher-result-card">
-            <div class="teacher-result-head">
-              <div>
-                <strong>{{ result.student.name }}</strong>
-                <span>{{ result.student.studentNo }} / {{ result.className }}</span>
-              </div>
-              <div class="teacher-result-score">
-                <strong>{{ result.totalScore }}</strong>
-                <span>总分</span>
-              </div>
-            </div>
-            <div class="teacher-exam-card-footer">
-              <span>{{ result.paperName }}</span>
-              <span>{{ formatTime(result.submittedAt) }}</span>
-              <span>{{ resultReviewSummary(result) }}</span>
-            </div>
-          </article>
-        </div>
-        <div v-else class="empty-state">
-          <strong>当前没有答卷</strong>
-          <span>学生提交后会自动汇总到这里，老师可以直接进入下方卡片进行评分。</span>
-        </div>
       </div>
 
-      <div class="result-grid teacher-result-grid">
-        <article v-for="result in filteredResults" :key="`detail-${result.id}`" class="panel result-card teacher-score-card">
+      <div class="teacher-review-layout">
+        <section class="panel teacher-review-list-panel">
           <div class="panel-title">
-            <h3>{{ result.student.name }} / {{ result.totalScore }} 分</h3>
-            <span>{{ result.paperName }} · {{ result.className }}</span>
+            <h3>学生列表</h3>
+            <span>点击左侧学生后，右侧展示该学生整份试卷与评分记录。</span>
+          </div>
+
+          <div v-if="filteredResults.length" class="teacher-review-list">
+            <article
+              v-for="result in filteredResults"
+              :key="`summary-${result.id}`"
+              class="teacher-result-card teacher-result-card--selectable teacher-result-card--row"
+              :class="{ active: result.id === selectedReviewResultId }"
+              @click="selectedReviewResultId = result.id"
+            >
+              <div class="teacher-result-head">
+                <div>
+                  <strong>{{ result.student.name }}</strong>
+                  <span>{{ result.student.studentNo }} / {{ result.className }}</span>
+                </div>
+                <div class="teacher-result-score">
+                  <strong>{{ result.totalScore }}</strong>
+                  <span>总分</span>
+                </div>
+              </div>
+              <div class="teacher-exam-card-footer">
+                <span>{{ result.paperName }}</span>
+                <span>{{ formatTime(result.submittedAt) }}</span>
+                <span>{{ resultReviewSummary(result) }}</span>
+              </div>
+            </article>
+          </div>
+          <div v-else class="empty-state">
+            <strong>当前没有答卷</strong>
+            <span>学生提交后会出现在这里，老师点击学生后即可在右侧阅卷。</span>
+          </div>
+        </section>
+
+        <article v-if="selectedReviewResult" :key="`detail-${selectedReviewResult.id}`" class="panel result-card teacher-score-card teacher-paper-panel">
+          <div class="panel-title">
+            <h3>{{ selectedReviewResult.student.name }} / {{ selectedReviewResult.totalScore }} 分</h3>
+            <span>{{ selectedReviewResult.paperName }} · {{ selectedReviewResult.className }}</span>
           </div>
           <div class="teacher-meta-grid teacher-meta-grid--compact">
             <div>
               <span>学号</span>
-              <strong>{{ result.student.studentNo }}</strong>
+              <strong>{{ selectedReviewResult.student.studentNo }}</strong>
             </div>
             <div>
               <span>提交时间</span>
-              <strong>{{ formatTime(result.submittedAt) }}</strong>
+              <strong>{{ formatTime(selectedReviewResult.submittedAt) }}</strong>
             </div>
             <div>
               <span>阅卷进度</span>
-              <strong>{{ resultReviewSummary(result) }}</strong>
+              <strong>{{ resultReviewSummary(selectedReviewResult) }}</strong>
             </div>
           </div>
           <div class="answer-list">
-            <div v-for="answer in result.answers" :key="`${result.id}-${answer.questionId}`" class="answer-row teacher-answer-row">
+            <div v-for="answer in selectedReviewResult.answers" :key="`${selectedReviewResult.id}-${answer.questionId}`" class="answer-row teacher-answer-row">
               <div>
                 <strong>{{ answer.questionTitle }}</strong>
                 <p>学生答案：{{ answer.studentAnswer || '未作答' }}</p>
@@ -623,17 +666,42 @@
                 最终分
                 <input v-model.number="answer.score" min="0" :max="answer.maxScore" type="number" />
               </label>
-              <button class="ghost-button compact-button" type="button" @click="confirmScore(result.id, answer.questionId, answer.score)">
+              <button class="ghost-button compact-button" type="button" @click="confirmScore(selectedReviewResult.id, answer.questionId, answer.score)">
                 <Check :size="17" />
                 <span>保存评分</span>
               </button>
             </div>
           </div>
         </article>
+        <div v-else class="panel empty-state teacher-paper-panel">
+          <strong>请选择一位学生</strong>
+          <span>先在左侧学生列表中点选一位学生，再在右侧查看该学生试卷和逐题评分详情。</span>
+        </div>
       </div>
     </section>
 
     <section v-if="activeView === 'reports'" class="view">
+      <div class="panel">
+        <div class="panel-title">
+          <h3>导出范围</h3>
+          <span>报告和导出文件会按当前选择的课程与教学班生成。</span>
+        </div>
+        <div class="assignment-summary">
+          <label>
+            课程 / 教学班
+            <select v-model.number="selectedTeachingAssignmentId">
+              <option v-for="item in teachingAssignments" :key="item.id" :value="item.id">
+                {{ item.courseName }} / {{ item.className }} / {{ item.teacherName }}
+              </option>
+            </select>
+          </label>
+          <div v-if="selectedTeachingAssignment" class="status-pill">
+            <strong>{{ selectedTeachingAssignment.courseName }}</strong>
+            <span>{{ selectedTeachingAssignment.className }} / {{ selectedTeachingAssignment.teacherName }}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="report-layout">
         <div class="panel report-panel">
           <FileSpreadsheet :size="32" />
@@ -668,7 +736,7 @@
 </template>
 
 <script setup>
-import { computed, inject } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { CalendarRange, Check, ClipboardList, Clock3, FileDown, FileSpreadsheet, FileText, ListChecks, Pencil, Plus, RotateCcw, Target, Trash2 } from 'lucide-vue-next'
 import AppShell from '../components/AppShell.vue'
 
@@ -698,6 +766,9 @@ const {
   formatTime,
   generateMockResults,
   hasQuestionFilters,
+  mockResultFeedback,
+  mockResultFeedbackTone,
+  mockResultGenerating,
   objectiveLabel,
   objectives,
   questionObjectiveFilter,
@@ -718,6 +789,7 @@ const {
   selectedResultExamId,
   selectedTeachingAssignment,
   selectedTeachingAssignmentId,
+  selectedTeachingAssignmentResults,
   startEditQuestion,
   studentTeachingAssignmentSummary,
   teachingAssignments,
@@ -745,6 +817,21 @@ const selectedExamAverageScore = computed(() => {
   const total = selectedExamResults.value.reduce((sum, item) => sum + Number(item.totalScore || 0), 0)
   return formatAverageScore(total / selectedExamResults.value.length)
 })
+
+const selectedReviewResultId = ref(null)
+const selectedReviewResult = computed(() =>
+  filteredResults.value.find(item => item.id === selectedReviewResultId.value) ?? filteredResults.value[0] ?? null
+)
+
+watch(filteredResults, value => {
+  if (!value.length) {
+    selectedReviewResultId.value = null
+    return
+  }
+  if (!value.some(item => item.id === selectedReviewResultId.value)) {
+    selectedReviewResultId.value = value[0].id
+  }
+}, { immediate: true })
 
 const draftQuestionTypeSummary = computed(() => summarizeQuestionTypes(selectedExamBankQuestions.value))
 const publishedQuestionTypeSummary = computed(() => summarizeQuestionTypes(examQuestions.value))
