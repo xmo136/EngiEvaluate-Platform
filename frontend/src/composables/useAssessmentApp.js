@@ -4,6 +4,7 @@ import {
   BarChart3,
   BookOpen,
   ClipboardCheck,
+  ClipboardList,
   FileText,
   GraduationCap,
   ListChecks,
@@ -25,6 +26,7 @@ export function useAssessmentApp() {
     { key: 'questions', label: '题库管理', icon: BookOpen },
     { key: 'exam', label: '在线考试', icon: ClipboardCheck },
     { key: 'results', label: '成绩确认', icon: ListChecks },
+    { key: 'regularGrades', label: '平时成绩', icon: ClipboardList },
     { key: 'reports', label: '报告导出', icon: FileText }
   ]
 
@@ -56,11 +58,7 @@ export function useAssessmentApp() {
     { title: '考试与分析归档', text: '老师完成考试与成绩确认，再导出统计结果和评价报告。', icon: BarChart3 }
   ]
 
-  const landingHighlights = [
-    { title: '管理员职责更清晰', text: '不再进入在线考试和成绩确认页面，专注基础数据和教学安排。', icon: ShieldCheck },
-    { title: '老师导入更贴近课程', text: '按课程名单导入已有学生信息，避免基础台账和课程名单混用。', icon: Upload },
-    { title: '删除操作有二次确认', text: '所有删除动作都会明确说明影响范围，再由用户确认执行。', icon: Trash2 }
-  ]
+  const landingHighlights = []
 
   const accessRoles = [
     { title: '管理员', text: '维护教师账号、教学安排和学生基础信息，不参与考试和成绩确认。', icon: ShieldCheck },
@@ -89,6 +87,8 @@ export function useAssessmentApp() {
   const exams = ref([])
   const examQuestions = ref([])
   const analysis = ref(null)
+  const regularGrades = ref([])
+  const regularGradeSaving = ref(false)
   const teachingAssignments = ref([])
   const teacherAccounts = ref([])
   const professionalClasses = ref([])
@@ -134,6 +134,12 @@ export function useAssessmentApp() {
   const assignmentForm = ref({
     courseName: defaultCourseName,
     className: '',
+    courseCode: '',
+    creditHours: null,
+    credits: null,
+    semester: '',
+    college: '',
+    grade: '',
     teacherAccountId: null,
     professionalClassIds: []
   })
@@ -422,19 +428,28 @@ export function useAssessmentApp() {
     landingHighlightsRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  let messageTimer = null
+  let errorTimer = null
+
   function clearFeedback() {
     pageMessage.value = ''
     pageError.value = ''
+    if (messageTimer) { clearTimeout(messageTimer); messageTimer = null }
+    if (errorTimer) { clearTimeout(errorTimer); errorTimer = null }
   }
 
   function setSuccess(message) {
     pageMessage.value = message
     pageError.value = ''
+    if (messageTimer) clearTimeout(messageTimer)
+    messageTimer = setTimeout(() => { pageMessage.value = '' }, 3000)
   }
 
   function setError(error, fallback = '操作失败，请稍后重试') {
     pageMessage.value = ''
     pageError.value = error?.message || fallback
+    if (errorTimer) clearTimeout(errorTimer)
+    errorTimer = setTimeout(() => { pageError.value = '' }, 4000)
   }
 
   function openConfirmDialog(config) {
@@ -526,6 +541,12 @@ export function useAssessmentApp() {
     assignmentForm.value = {
       courseName: defaultCourseName,
       className: '',
+      courseCode: '',
+      creditHours: null,
+      credits: null,
+      semester: '',
+      college: '',
+      grade: '',
       teacherAccountId: teacherAccounts.value[0]?.id ?? null,
       professionalClassIds: []
     }
@@ -547,6 +568,12 @@ export function useAssessmentApp() {
     assignmentForm.value = {
       courseName: item.courseName,
       className: item.className,
+      courseCode: item.courseCode || '',
+      creditHours: item.creditHours ?? null,
+      credits: item.credits ?? null,
+      semester: item.semester || '',
+      college: item.college || '',
+      grade: item.grade || '',
       teacherAccountId: item.teacherAccountId,
       professionalClassIds: [...(item.professionalClassIds ?? [])]
     }
@@ -735,6 +762,7 @@ export function useAssessmentApp() {
     exams.value = []
     examQuestions.value = []
     analysis.value = null
+    regularGrades.value = []
     questions.value = []
     students.value = []
     teachingAssignments.value = []
@@ -806,6 +834,9 @@ export function useAssessmentApp() {
         await loadCandidateStudents()
       }
       await loadExamQuestions()
+      if (canView('regularGrades')) {
+        await loadRegularGrades()
+      }
       if (isAdmin.value && !editingAssignmentId.value && !assignmentForm.value.teacherAccountId && teacherAccounts.value.length) {
         assignmentForm.value.teacherAccountId = teacherAccounts.value[0].id
       }
@@ -1329,6 +1360,43 @@ export function useAssessmentApp() {
     }
   }
 
+  async function loadRegularGrades() {
+    if (!selectedTeachingAssignmentId.value) {
+      regularGrades.value = []
+      return
+    }
+    try {
+      regularGrades.value = await api.regularGrades(selectedTeachingAssignmentId.value)
+    } catch (error) {
+      regularGrades.value = []
+      setError(error, '加载平时成绩失败')
+    }
+  }
+
+  async function saveRegularGrades() {
+    if (!selectedTeachingAssignmentId.value) {
+      setError(new Error('请先选择教学安排'))
+      return
+    }
+    regularGradeSaving.value = true
+    try {
+      regularGrades.value = await api.saveRegularGrades({
+        teachingAssignmentId: selectedTeachingAssignmentId.value,
+        grades: regularGrades.value.map(g => ({
+          studentId: g.studentId,
+          labScore: g.labScore,
+          homeworkScore: g.homeworkScore,
+          classScore: g.classScore
+        }))
+      })
+      setSuccess('平时成绩已保存。')
+    } catch (error) {
+      setError(error, '保存平时成绩失败')
+    } finally {
+      regularGradeSaving.value = false
+    }
+  }
+
   async function addStudentToSelectedTeachingAssignment(student) {
     if (!selectedTeachingAssignmentId.value || !student?.id) {
       setError(new Error('请先选择教学安排和学生'))
@@ -1459,6 +1527,7 @@ export function useAssessmentApp() {
         examForm.value.teachingAssignmentId = selectedTeachingAssignmentId.value
       }
       await loadCandidateStudents()
+      await loadRegularGrades()
     }
     try {
       await refreshAnalysis()
@@ -1500,6 +1569,10 @@ export function useAssessmentApp() {
     allNavItems,
     analysis,
     assignmentForm,
+    regularGrades,
+    regularGradeSaving,
+    loadRegularGrades,
+    saveRegularGrades,
     canEditQuestion,
     candidateKeyword,
     candidateStudents,

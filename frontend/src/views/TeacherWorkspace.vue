@@ -1,15 +1,15 @@
 <template>
   <AppShell>
-    <section v-if="activeView === 'dashboard'" class="view">
+    <section v-if="activeView === 'dashboard'" class="view" aria-label="教师仪表板">
       <div class="panel">
         <div class="panel-title">
           <h3>统计范围</h3>
           <span>先选择课程与教学班，再查看对应统计结果。</span>
         </div>
         <div class="assignment-summary">
-          <label>
+          <label for="dashboard-assignment">
             课程 / 教学班
-            <select v-model.number="selectedTeachingAssignmentId">
+            <select id="dashboard-assignment" v-model.number="selectedTeachingAssignmentId" aria-label="选择课程和教学班">
               <option v-for="item in teachingAssignments" :key="item.id" :value="item.id">
                 {{ item.courseName }} / {{ item.className }} / {{ item.teacherName }}
               </option>
@@ -22,39 +22,39 @@
         </div>
       </div>
 
-      <div class="kpi-grid">
-        <div class="metric">
+      <div class="kpi-grid" role="list" aria-label="关键指标">
+        <div class="metric" role="listitem">
           <span>学生人数</span>
           <strong>{{ analysis?.studentCount ?? 0 }}</strong>
         </div>
-        <div class="metric">
+        <div class="metric" role="listitem">
           <span>题库题量</span>
           <strong>{{ analysis?.questionCount ?? 0 }}</strong>
         </div>
-        <div class="metric">
+        <div class="metric" role="listitem">
           <span>平均分</span>
           <strong>{{ analysis?.averageScore ?? 0 }}</strong>
         </div>
-        <div class="metric">
+        <div class="metric" role="listitem">
           <span>提交记录</span>
           <strong>{{ selectedTeachingAssignmentResults.length }}</strong>
         </div>
       </div>
 
-      <div class="chart-grid">
+      <div class="chart-grid" role="img" aria-label="统计图表">
         <div class="panel">
           <div class="panel-title">
             <h3>成绩分布</h3>
             <span>按分数段统计</span>
           </div>
-          <div ref="scoreChartRef" class="chart"></div>
+          <div ref="scoreChartRef" class="chart" role="img" aria-label="成绩分布图表"></div>
         </div>
         <div class="panel">
           <div class="panel-title">
             <h3>题型分布</h3>
             <span>题库结构概览</span>
           </div>
-          <div ref="typeChartRef" class="chart"></div>
+          <div ref="typeChartRef" class="chart" role="img" aria-label="题型分布图表"></div>
         </div>
       </div>
 
@@ -75,7 +75,7 @@
       </div>
     </section>
 
-    <section v-if="activeView === 'students'" class="view">
+    <section v-if="activeView === 'students'" class="view" aria-label="学生管理">
       <div class="panel">
         <div class="panel-title">
           <h3>课程学生管理</h3>
@@ -104,7 +104,7 @@
             <span>移出课程不会删除学生基础信息和历史成绩。</span>
           </div>
           <div v-if="filteredStudents.length" class="table-wrap">
-            <table>
+            <table aria-label="当前课程学生列表">
               <thead>
                 <tr>
                   <th>学号</th>
@@ -123,8 +123,8 @@
                   <td>{{ student.username || student.studentNo }}</td>
                   <td>{{ student.passwordChangeRequired ? '待修改初始密码' : '已完成修改' }}</td>
                   <td class="row-actions">
-                    <button class="ghost-button compact-button danger-button" type="button" @click="confirmRemoveStudentFromSelectedTeachingAssignment(student)">
-                      <Trash2 :size="15" />
+                    <button class="ghost-button compact-button danger-button" type="button" :aria-label="`将 ${student.name} 从当前课程移出`" @click="confirmRemoveStudentFromSelectedTeachingAssignment(student)">
+                      <Trash2 :size="15" aria-hidden="true" />
                       <span>移出课程</span>
                     </button>
                   </td>
@@ -144,10 +144,11 @@
             <span>从全校学生基础库中选择学生加入当前教学安排。</span>
           </div>
           <div class="import-box">
-            <input v-model="candidateKeyword" type="text" placeholder="搜索学号、姓名或班级" />
+            <label for="candidate-search" class="sr-only">搜索候选学生</label>
+            <input id="candidate-search" v-model="candidateKeyword" type="text" placeholder="搜索学号、姓名或班级" aria-label="搜索候选学生" />
           </div>
           <div v-if="filteredCandidateStudents.length" class="table-wrap">
-            <table>
+            <table aria-label="候选学生列表">
               <thead>
                 <tr>
                   <th>学号</th>
@@ -164,8 +165,8 @@
                   <td>{{ student.className }}</td>
                   <td>{{ studentTeachingAssignmentSummary(student) }}</td>
                   <td class="row-actions">
-                    <button class="primary-button compact-button" type="button" @click="addStudentToSelectedTeachingAssignment(student)">
-                      <Plus :size="15" />
+                    <button class="primary-button compact-button" type="button" :aria-label="`将 ${student.name} 加入当前课程`" @click="addStudentToSelectedTeachingAssignment(student)">
+                      <Plus :size="15" aria-hidden="true" />
                       <span>加入课程</span>
                     </button>
                   </td>
@@ -181,7 +182,7 @@
       </div>
     </section>
 
-    <section v-if="activeView === 'questions'" class="view">
+    <section v-if="activeView === 'questions'" class="view" aria-label="题库管理">
       <div class="panel">
         <div class="panel-title">
           <h3>题库</h3>
@@ -226,8 +227,8 @@
           </div>
         </div>
 
-        <div v-if="filteredQuestions.length" class="question-list">
-          <article v-for="question in filteredQuestions" :key="question.id" class="question-card">
+        <div v-if="filteredQuestions.length" class="question-list" role="list" aria-label="题目列表">
+          <article v-for="question in filteredQuestions" :key="question.id" class="question-card" role="listitem" :aria-label="`${typeLabel(question.type)}：${question.title}，${question.score} 分`">
             <div class="question-card-head">
               <div class="question-card-meta">
                 <label class="question-checkbox">
@@ -243,12 +244,12 @@
                 </div>
               </div>
               <div class="question-card-actions">
-                <button class="ghost-button compact-button" type="button" @click="startEditQuestion(question)">
-                  <Pencil :size="15" />
+                <button class="ghost-button compact-button" type="button" :aria-label="`编辑题目：${question.title}`" @click="startEditQuestion(question)">
+                  <Pencil :size="15" aria-hidden="true" />
                   <span>编辑</span>
                 </button>
-                <button class="ghost-button compact-button danger-button" type="button" @click="confirmDeleteQuestion(question)">
-                  <Trash2 :size="15" />
+                <button class="ghost-button compact-button danger-button" type="button" :aria-label="`删除题目：${question.title}`" @click="confirmDeleteQuestion(question)">
+                  <Trash2 :size="15" aria-hidden="true" />
                   <span>删除</span>
                 </button>
               </div>
@@ -268,16 +269,16 @@
       </div>
     </section>
 
-    <section v-if="activeView === 'exam'" class="view">
+    <section v-if="activeView === 'exam'" class="view" aria-label="考试管理">
       <div class="panel">
         <div class="panel-title">
           <h3>考试管理</h3>
           <span>老师可以在这里统一创建考试、跟踪开考状态，并快速查看组卷情况。</span>
         </div>
 
-        <div class="teacher-summary-grid">
-          <article v-for="item in teacherExamStats" :key="item.label" class="teacher-stat-card">
-            <component :is="item.icon" :size="18" class="teacher-stat-icon" />
+        <div class="teacher-summary-grid" role="list" aria-label="考试统计">
+          <article v-for="item in teacherExamStats" :key="item.label" class="teacher-stat-card" role="listitem">
+            <component :is="item.icon" :size="18" class="teacher-stat-icon" aria-hidden="true" />
             <div>
               <span>{{ item.label }}</span>
               <strong>{{ item.value }}</strong>
@@ -286,13 +287,16 @@
           </article>
         </div>
 
-        <div v-if="exams.length" class="teacher-exam-list">
+        <div v-if="exams.length" class="teacher-exam-list" role="list" aria-label="考试列表">
           <button
             v-for="exam in exams"
             :key="exam.id"
             class="exam-summary-card teacher-exam-card"
             :class="{ active: exam.id === selectedExamId }"
             type="button"
+            role="listitem"
+            :aria-label="`${exam.paperName} - ${resolveExamState(exam).label}`"
+            :aria-current="exam.id === selectedExamId ? 'true' : undefined"
             @click="selectedExamId = exam.id"
           >
             <div class="exam-summary-head">
@@ -425,12 +429,12 @@
           </div>
 
           <div class="teacher-action-row">
-            <button class="ghost-button compact-button" type="button" @click="resetExamForm">
-              <RotateCcw :size="16" />
+            <button class="ghost-button compact-button" type="button" aria-label="重置考试创建表单" @click="resetExamForm">
+              <RotateCcw :size="16" aria-hidden="true" />
               <span>重置草稿</span>
             </button>
-            <button class="primary-button compact-button" type="button" :disabled="!selectedExamQuestionCount" @click="createExam">
-              <Plus :size="17" />
+            <button class="primary-button compact-button" type="button" :disabled="!selectedExamQuestionCount" aria-label="创建考试" @click="createExam">
+              <Plus :size="17" aria-hidden="true" />
               <span>创建考试</span>
             </button>
           </div>
@@ -523,9 +527,10 @@
                   class="primary-button compact-button"
                   type="button"
                   :disabled="mockResultGenerating"
+                  :aria-label="mockResultGenerating ? '正在生成模拟答卷' : '生成模拟答卷'"
                   @click="generateMockResults(selectedExam.id)"
                 >
-                  <ClipboardList :size="16" />
+                  <ClipboardList :size="16" aria-hidden="true" />
                   <span>{{ mockResultGenerating ? '生成中...' : '生成模拟答卷' }}</span>
                 </button>
               </div>
@@ -560,7 +565,7 @@
       </div>
     </section>
 
-    <section v-if="activeView === 'results'" class="view">
+    <section v-if="activeView === 'results'" class="view" aria-label="阅卷评分">
       <div class="panel">
         <div class="panel-title">
           <h3>学生答题与评分</h3>
@@ -582,9 +587,9 @@
           </div>
         </div>
 
-        <div class="teacher-summary-grid">
-          <article v-for="item in teacherResultStats" :key="item.label" class="teacher-stat-card">
-            <component :is="item.icon" :size="18" class="teacher-stat-icon" />
+        <div class="teacher-summary-grid" role="list" aria-label="阅卷统计">
+          <article v-for="item in teacherResultStats" :key="item.label" class="teacher-stat-card" role="listitem">
+            <component :is="item.icon" :size="18" class="teacher-stat-icon" aria-hidden="true" />
             <div>
               <span>{{ item.label }}</span>
               <strong>{{ item.value }}</strong>
@@ -602,12 +607,15 @@
             <span>点击左侧学生后，右侧展示该学生整份试卷与评分记录。</span>
           </div>
 
-          <div v-if="filteredResults.length" class="teacher-review-list">
+          <div v-if="filteredResults.length" class="teacher-review-list" role="list" aria-label="学生答卷列表">
             <article
               v-for="result in filteredResults"
               :key="`summary-${result.id}`"
               class="teacher-result-card teacher-result-card--selectable teacher-result-card--row"
+              role="listitem"
               :class="{ active: result.id === selectedReviewResultId }"
+              :aria-label="`${result.student.name}，总分 ${result.totalScore}，${resultReviewSummary(result)}`"
+              :aria-current="result.id === selectedReviewResultId ? 'true' : undefined"
               @click="selectedReviewResultId = result.id"
             >
               <div class="teacher-result-head">
@@ -664,10 +672,10 @@
               </div>
               <label class="teacher-score-input">
                 最终分
-                <input v-model.number="answer.score" min="0" :max="answer.maxScore" type="number" />
+                <input v-model.number="answer.score" min="0" :max="answer.maxScore" type="number" :aria-label="`${answer.questionTitle} 最终得分`" />
               </label>
-              <button class="ghost-button compact-button" type="button" @click="confirmScore(selectedReviewResult.id, answer.questionId, answer.score)">
-                <Check :size="17" />
+              <button class="ghost-button compact-button" type="button" :aria-label="`保存 ${answer.questionTitle} 的评分`" @click="confirmScore(selectedReviewResult.id, answer.questionId, answer.score)">
+                <Check :size="17" aria-hidden="true" />
                 <span>保存评分</span>
               </button>
             </div>
@@ -680,7 +688,86 @@
       </div>
     </section>
 
-    <section v-if="activeView === 'reports'" class="view">
+    <section v-if="activeView === 'regularGrades'" class="view" aria-label="平时成绩管理">
+      <div class="panel">
+        <div class="panel-title">
+          <h3>平时成绩录入</h3>
+          <span>为每个学生录入上机、作业和课堂表现成绩。</span>
+        </div>
+        <div class="assignment-summary">
+          <label>
+            课程 / 教学班
+            <select v-model.number="selectedTeachingAssignmentId">
+              <option v-for="item in teachingAssignments" :key="item.id" :value="item.id">
+                {{ item.courseName }} / {{ item.className }} / {{ item.teacherName }}
+              </option>
+            </select>
+          </label>
+          <div v-if="selectedTeachingAssignment" class="status-pill">
+            <strong>{{ selectedTeachingAssignment.courseName }}</strong>
+            <span>{{ selectedTeachingAssignment.className }} / {{ selectedTeachingAssignment.teacherName }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="regularGrades.length" class="panel">
+        <div class="panel-title">
+          <h3>学生成绩表</h3>
+          <span>共 {{ regularGrades.length }} 名学生。满分均为 100 分。</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>学号</th>
+                <th>姓名</th>
+                <th>上机</th>
+                <th>作业</th>
+                <th>课堂表现</th>
+                <th>期末考试</th>
+                <th>总成绩</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(grade, index) in regularGrades" :key="grade.studentId">
+                <td>{{ grade.studentNo }}</td>
+                <td>{{ grade.studentName }}</td>
+                <td>
+                  <input type="number" min="0" max="100" v-model.number="regularGrades[index].labScore"
+                         :aria-label="`${grade.studentName} 上机成绩`" />
+                </td>
+                <td>
+                  <input type="number" min="0" max="100" v-model.number="regularGrades[index].homeworkScore"
+                         :aria-label="`${grade.studentName} 作业成绩`" />
+                </td>
+                <td>
+                  <input type="number" min="0" max="100" v-model.number="regularGrades[index].classScore"
+                         :aria-label="`${grade.studentName} 课堂表现成绩`" />
+                </td>
+                <td class="score-readonly">{{ grade.examScore ?? '-' }}</td>
+                <td class="score-total">{{ grade.totalScore?.toFixed(1) ?? '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="form-action-row">
+          <button class="primary-button compact-button" type="button"
+                  :disabled="regularGradeSaving"
+                  @click="saveRegularGrades">
+            <Check :size="17" aria-hidden="true" />
+            <span>{{ regularGradeSaving ? '保存中...' : '保存平时成绩' }}</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-else class="panel empty-state">
+        <ClipboardList :size="32" aria-hidden="true" />
+        <strong>暂无学生数据</strong>
+        <span>请先选择一个教学安排，确保该安排下已有学生。</span>
+      </div>
+    </section>
+
+    <section v-if="activeView === 'reports'" class="view" aria-label="报告导出">
       <div class="panel">
         <div class="panel-title">
           <h3>导出范围</h3>
@@ -702,22 +789,22 @@
         </div>
       </div>
 
-      <div class="report-layout">
-        <div class="panel report-panel">
-          <FileSpreadsheet :size="32" />
+      <div class="report-layout" role="list" aria-label="报告导出选项">
+        <div class="panel report-panel" role="listitem">
+          <FileSpreadsheet :size="32" aria-hidden="true" />
           <h3>成绩分析 Excel</h3>
           <p>导出学生成绩、课程目标达成和题型分布统计。</p>
-          <button class="primary-button" @click="download('/api/reports/score-analysis.xls')">
-            <FileDown :size="17" />
+          <button class="primary-button" aria-label="导出成绩分析 Excel 文件" @click="download('/api/reports/score-analysis.xls')">
+            <FileDown :size="17" aria-hidden="true" />
             <span>导出 .xls</span>
           </button>
         </div>
-        <div class="panel report-panel">
-          <FileText :size="32" />
+        <div class="panel report-panel" role="listitem">
+          <FileText :size="32" aria-hidden="true" />
           <h3>课程目标评价 Word</h3>
           <p>根据考试数据生成课程目标达成评价报告。</p>
-          <button class="primary-button" @click="download('/api/reports/objective-report.docx')">
-            <FileDown :size="17" />
+          <button class="primary-button" aria-label="导出课程目标评价 Word 文件" @click="download('/api/reports/objective-report.docx')">
+            <FileDown :size="17" aria-hidden="true" />
             <span>导出 .docx</span>
           </button>
         </div>
@@ -776,7 +863,10 @@ const {
   questionTypes,
   questions,
   resetExamForm,
+  regularGrades,
+  regularGradeSaving,
   results,
+  saveRegularGrades,
   scoreChartRef,
   selectedExam,
   selectedExamBankQuestions,
@@ -969,3 +1059,87 @@ function resultReviewSummary(result) {
   return `已评分 ${reviewedCount}/${answers.length}`
 }
 </script>
+
+<style scoped>
+/* Panel stagger animation */
+.panel {
+  animation: fadeInUp 400ms ease-out both;
+}
+
+.panel:nth-child(1) { animation-delay: 50ms; }
+.panel:nth-child(2) { animation-delay: 100ms; }
+.panel:nth-child(3) { animation-delay: 150ms; }
+.panel:nth-child(4) { animation-delay: 200ms; }
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Table row hover feedback */
+.table-wrap tr {
+  transition: background-color var(--transition-fast);
+}
+
+.table-wrap tr:hover {
+  background: var(--color-primary-light);
+}
+
+/* Question card focus styles */
+.question-card:focus-within {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Form focus styles */
+.form-panel input:focus-visible,
+.form-panel select:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+
+  .table-wrap tr {
+    transition: none;
+  }
+}
+
+/* 平时成绩表格样式 */
+.table-wrap input[type="number"] {
+  width: 70px;
+  padding: 4px 6px;
+  text-align: center;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.table-wrap input[type="number"]:focus {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+
+.score-readonly {
+  text-align: center;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.score-total {
+  text-align: center;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+</style>

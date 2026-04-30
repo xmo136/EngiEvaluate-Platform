@@ -184,7 +184,12 @@ export const api = {
     method: 'PATCH',
     body: JSON.stringify(payload)
   }),
-  analysis: (teachingAssignmentId) => request(withQuery('/api/analysis', { teachingAssignmentId }))
+  analysis: (teachingAssignmentId) => request(withQuery('/api/analysis', { teachingAssignmentId })),
+  regularGrades: (teachingAssignmentId) => request(withQuery('/api/regular-grades', { teachingAssignmentId })),
+  saveRegularGrades: (payload) => request('/api/regular-grades', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  })
 }
 
 export async function downloadReport(path) {
