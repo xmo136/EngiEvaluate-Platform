@@ -3,6 +3,7 @@ package com.example.assessment.service;
 import com.example.assessment.dto.AnalysisSummary;
 import com.example.assessment.dto.ExamPaperSaveRequest;
 import com.example.assessment.dto.ExamSubmitRequest;
+import com.example.assessment.dto.RegularGradeSaveRequest;
 import com.example.assessment.dto.ScoreConfirmRequest;
 import com.example.assessment.dto.StudentCreateRequest;
 import com.example.assessment.dto.StudentUpdateRequest;
@@ -21,6 +22,7 @@ import com.example.assessment.model.ProfessionalClassImportResult;
 import com.example.assessment.model.ProfessionalClassOption;
 import com.example.assessment.model.Question;
 import com.example.assessment.model.QuestionType;
+import com.example.assessment.model.RegularGrade;
 import com.example.assessment.model.Student;
 import com.example.assessment.model.StudentImportResult;
 import com.example.assessment.model.TeacherAccountOption;
@@ -30,6 +32,7 @@ import com.example.assessment.persistence.entity.AnswerRecordEntity;
 import com.example.assessment.persistence.entity.ExamPaperEntity;
 import com.example.assessment.persistence.entity.ExamResultEntity;
 import com.example.assessment.persistence.entity.ProfessionalClassEntity;
+import com.example.assessment.persistence.entity.RegularGradeEntity;
 import com.example.assessment.persistence.entity.QuestionEntity;
 import com.example.assessment.persistence.entity.StudentEntity;
 import com.example.assessment.persistence.entity.TeachingAssignmentEntity;
@@ -39,6 +42,7 @@ import com.example.assessment.persistence.repository.ExamPaperRepository;
 import com.example.assessment.persistence.repository.ExamResultRepository;
 import com.example.assessment.persistence.repository.ProfessionalClassRepository;
 import com.example.assessment.persistence.repository.QuestionRepository;
+import com.example.assessment.persistence.repository.RegularGradeRepository;
 import com.example.assessment.persistence.repository.StudentRepository;
 import com.example.assessment.persistence.repository.TeachingAssignmentRepository;
 import com.example.assessment.persistence.repository.UserAccountRepository;
@@ -85,6 +89,7 @@ public class AssessmentService {
     private final TeachingAssignmentRepository teachingAssignmentRepository;
     private final ProfessionalClassRepository professionalClassRepository;
     private final UserAccountRepository userAccountRepository;
+    private final RegularGradeRepository regularGradeRepository;
     private final OpenAiGradingService openAiGradingService;
 
     public AssessmentService(AnswerRecordRepository answerRecordRepository,
@@ -95,6 +100,7 @@ public class AssessmentService {
                              TeachingAssignmentRepository teachingAssignmentRepository,
                              ProfessionalClassRepository professionalClassRepository,
                              UserAccountRepository userAccountRepository,
+                             RegularGradeRepository regularGradeRepository,
                              OpenAiGradingService openAiGradingService) {
         this.answerRecordRepository = answerRecordRepository;
         this.studentRepository = studentRepository;
@@ -104,6 +110,7 @@ public class AssessmentService {
         this.teachingAssignmentRepository = teachingAssignmentRepository;
         this.professionalClassRepository = professionalClassRepository;
         this.userAccountRepository = userAccountRepository;
+        this.regularGradeRepository = regularGradeRepository;
         this.openAiGradingService = openAiGradingService;
     }
 
@@ -127,11 +134,11 @@ public class AssessmentService {
     @Transactional
     public Question updateQuestion(Long questionId, Question question) {
         if (questionId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Question is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择题目");
         }
         ExamPaperEntity paper = questionBankPaper();
         QuestionEntity entity = questionRepository.findById(questionId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Question not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "题目不存在"));
         ensureQuestionBelongsToPaper(entity, paper);
         applyQuestion(entity, paper, question);
         return toQuestion(questionRepository.save(entity));
@@ -140,13 +147,13 @@ public class AssessmentService {
     @Transactional
     public void deleteQuestion(Long questionId) {
         if (questionId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Question is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择题目");
         }
         QuestionEntity entity = questionRepository.findById(questionId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Question not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "题目不存在"));
         ensureQuestionBelongsToPaper(entity, questionBankPaper());
         if (answerRecordRepository.countByQuestionId(questionId) > 0) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "This question already has submitted answers");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该题目已有学生作答记录，无法删除");
         }
         questionRepository.delete(entity);
     }
@@ -222,11 +229,11 @@ public class AssessmentService {
     @Transactional
     public TeacherAccountOption addTeacherAccount(TeacherAccountCreateRequest request) {
         if (request == null || isBlank(request.username()) || isBlank(request.displayName())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Teacher username and display name are required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "教师账号和姓名不能为空");
         }
         String username = request.username().trim();
         if (userAccountRepository.findByUsername(username).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already exists");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该账号已存在");
         }
 
         UserAccountEntity account = new UserAccountEntity();
@@ -243,18 +250,18 @@ public class AssessmentService {
     @Transactional
     public TeacherAccountOption updateTeacherAccount(Long teacherAccountId, TeacherAccountUpdateRequest request) {
         if (teacherAccountId == null || request == null || isBlank(request.username()) || isBlank(request.displayName())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Teacher username and display name are required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "教师账号和姓名不能为空");
         }
         UserAccountEntity account = userAccountRepository.findById(teacherAccountId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teacher account not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "教师账号不存在"));
         if (account.getRole() != UserRole.TEACHER) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected account is not a teacher");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "所选账号不是教师角色");
         }
         String username = request.username().trim();
         userAccountRepository.findByUsername(username)
                 .filter(other -> !Objects.equals(other.getId(), teacherAccountId))
                 .ifPresent(other -> {
-                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already exists");
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "该账号已存在");
                 });
 
         account.setUsername(username);
@@ -269,15 +276,15 @@ public class AssessmentService {
     @Transactional
     public void deleteTeacherAccount(Long teacherAccountId) {
         if (teacherAccountId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Teacher account is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择教师账号");
         }
         UserAccountEntity account = userAccountRepository.findById(teacherAccountId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teacher account not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "教师账号不存在"));
         if (account.getRole() != UserRole.TEACHER) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected account is not a teacher");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "所选账号不是教师角色");
         }
         if (teachingAssignmentRepository.countByTeacherAccountId(teacherAccountId) > 0) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "This teacher is already bound to teaching assignments");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该教师已绑定教学班，无法删除");
         }
         userAccountRepository.delete(account);
     }
@@ -285,18 +292,24 @@ public class AssessmentService {
     @Transactional
     public TeachingAssignment addTeachingAssignment(TeachingAssignmentCreateRequest request) {
         if (request == null || isBlank(request.courseName()) || isBlank(request.className()) || request.teacherAccountId() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Course, teaching class and teacher are required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "课程名称、教学班和任课老师不能为空");
         }
         UserAccountEntity teacher = userAccountRepository.findById(request.teacherAccountId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Teacher account not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "教师账号不存在"));
         if (teacher.getRole() != UserRole.TEACHER) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected account is not a teacher");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "所选账号不是教师角色");
         }
         Set<ProfessionalClassEntity> professionalClasses = loadProfessionalClasses(request.professionalClassIds());
 
         TeachingAssignmentEntity entity = new TeachingAssignmentEntity();
         entity.setCourseName(request.courseName().trim());
         entity.setClassName(request.className().trim());
+        entity.setCourseCode(request.courseCode());
+        entity.setCreditHours(request.creditHours());
+        entity.setCredits(request.credits());
+        entity.setSemester(request.semester());
+        entity.setCollege(request.college());
+        entity.setGrade(request.grade());
         entity.setTeacherAccount(teacher);
         entity.setProfessionalClasses(professionalClasses);
         TeachingAssignmentEntity saved = teachingAssignmentRepository.save(entity);
@@ -307,19 +320,25 @@ public class AssessmentService {
     @Transactional
     public TeachingAssignment updateTeachingAssignment(Long teachingAssignmentId, TeachingAssignmentUpdateRequest request) {
         if (teachingAssignmentId == null || request == null || isBlank(request.courseName()) || isBlank(request.className()) || request.teacherAccountId() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Course, teaching class and teacher are required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "课程名称、教学班和任课老师不能为空");
         }
         TeachingAssignmentEntity entity = teachingAssignmentRepository.findById(teachingAssignmentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teaching assignment not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "教学班安排不存在"));
         UserAccountEntity teacher = userAccountRepository.findById(request.teacherAccountId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Teacher account not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "教师账号不存在"));
         if (teacher.getRole() != UserRole.TEACHER) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected account is not a teacher");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "所选账号不是教师角色");
         }
         Set<ProfessionalClassEntity> professionalClasses = loadProfessionalClasses(request.professionalClassIds());
 
         entity.setCourseName(request.courseName().trim());
         entity.setClassName(request.className().trim());
+        entity.setCourseCode(request.courseCode());
+        entity.setCreditHours(request.creditHours());
+        entity.setCredits(request.credits());
+        entity.setSemester(request.semester());
+        entity.setCollege(request.college());
+        entity.setGrade(request.grade());
         entity.setTeacherAccount(teacher);
         entity.setProfessionalClasses(professionalClasses);
         TeachingAssignmentEntity saved = teachingAssignmentRepository.save(entity);
@@ -330,10 +349,16 @@ public class AssessmentService {
     @Transactional
     public void deleteTeachingAssignment(Long teachingAssignmentId) {
         if (teachingAssignmentId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Teaching assignment is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择教学班安排");
         }
         TeachingAssignmentEntity entity = teachingAssignmentRepository.findById(teachingAssignmentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teaching assignment not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "教学班安排不存在"));
+        // 检查是否有关联的考试
+        List<ExamPaperEntity> exams = examPaperRepository.findAllByPaperTypeAndTeachingAssignmentIdOrderByStartTimeDescIdDesc(
+                ExamPaperType.EXAM, teachingAssignmentId);
+        if (!exams.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该教学班已关联 " + exams.size() + " 场考试，无法删除。请先删除相关考试。");
+        }
         List<StudentEntity> students = studentRepository.findAllByTeachingAssignmentsIdOrderByIdAsc(teachingAssignmentId);
         for (StudentEntity student : students) {
             student.getTeachingAssignments().removeIf(item -> Objects.equals(item.getId(), teachingAssignmentId));
@@ -387,7 +412,7 @@ public class AssessmentService {
             return listStudents();
         }
         teachingAssignmentRepository.findById(teachingAssignmentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teaching assignment not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "教学班安排不存在"));
         return listStudents().stream()
                 .filter(student -> student.getTeachingAssignmentIds() != null && student.getTeachingAssignmentIds().contains(teachingAssignmentId))
                 .toList();
@@ -462,8 +487,8 @@ public class AssessmentService {
         if (rows.isEmpty()) {
             messages.add("No valid rows were found in the uploaded file");
         } else {
-            messages.add("Created " + createdClassCount + " professional classes, added " + createdStudentCount
-                    + " students, updated " + updatedStudentCount + " students, skipped " + skippedCount + " rows");
+            messages.add("创建了 " + createdClassCount + " 个专业班级，新增 " + createdStudentCount
+                    + " 名学生，更新 " + updatedStudentCount + " 名学生，跳过 " + skippedCount + " 行");
         }
         return new ProfessionalClassImportResult(createdClassCount, createdStudentCount, updatedStudentCount, skippedCount, messages);
     }
@@ -471,14 +496,14 @@ public class AssessmentService {
     @Transactional
     public Student addStudent(StudentCreateRequest request) {
         if (request == null || isBlank(request.studentNo()) || isBlank(request.name()) || isBlank(request.className())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Student number, name and class are required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "学号、姓名和班级不能为空");
         }
         String studentNo = request.studentNo().trim();
         if (studentRepository.findByStudentNo(studentNo).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Student number already exists");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该学号已存在");
         }
         if (userAccountRepository.findByUsername(studentNo).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already exists");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该账号已存在");
         }
 
         StudentEntity entity = new StudentEntity();
@@ -496,16 +521,16 @@ public class AssessmentService {
     @Transactional
     public Student updateStudent(Long studentId, StudentUpdateRequest request) {
         if (studentId == null || request == null || isBlank(request.studentNo()) || isBlank(request.name()) || isBlank(request.className())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Student number, name and class are required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "学号、姓名和班级不能为空");
         }
         StudentEntity student = studentRepository.findById(studentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Student not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "学生不存在"));
 
         String studentNo = request.studentNo().trim();
         studentRepository.findByStudentNo(studentNo)
                 .filter(other -> !Objects.equals(other.getId(), studentId))
                 .ifPresent(other -> {
-                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Student number already exists");
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "该学号已存在");
                 });
 
         UserAccountEntity account = userAccountRepository.findByStudentId(studentId).orElse(null);
@@ -514,10 +539,10 @@ public class AssessmentService {
             userAccountRepository.findByUsername(studentNo)
                     .filter(other -> !Objects.equals(other.getId(), accountId))
                     .ifPresent(other -> {
-                        throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already exists");
+                        throw new ResponseStatusException(HttpStatus.CONFLICT, "该账号已存在");
                     });
         } else if (userAccountRepository.findByUsername(studentNo).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already exists");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该账号已存在");
         }
 
         student.setStudentNo(studentNo);
@@ -542,10 +567,10 @@ public class AssessmentService {
     @Transactional
     public void deleteStudent(Long studentId) {
         if (studentId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Student is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择学生");
         }
         StudentEntity student = studentRepository.findById(studentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Student not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "学生不存在"));
 
         for (TeachingAssignmentEntity assignment : teachingAssignmentRepository.findAllByOrderByIdAsc()) {
             assignment.getExcludedStudents().removeIf(item -> Objects.equals(item.getId(), studentId));
@@ -618,9 +643,9 @@ public class AssessmentService {
         }
 
         if (rows.isEmpty()) {
-            messages.add("No valid student rows were found in the uploaded file");
+            messages.add("未在上传文件中读取到有效学生行");
         } else {
-            messages.add("Imported " + importedCount + " students into the course and skipped " + skippedCount + " rows");
+            messages.add("成功导入 " + importedCount + " 名学生到课程，跳过 " + skippedCount + " 行");
         }
         return new StudentImportResult(importedCount, skippedCount, messages);
     }
@@ -629,12 +654,12 @@ public class AssessmentService {
     public Student addStudentToTeachingAssignment(UserAccountEntity actor, Long teachingAssignmentId, Long studentId) {
         TeachingAssignmentEntity assignment = loadAssignmentForActor(teachingAssignmentId, actor);
         if (studentId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Student is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择学生");
         }
         StudentEntity student = studentRepository.findById(studentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Student not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "学生不存在"));
         if (student.getTeachingAssignments().stream().anyMatch(item -> Objects.equals(item.getId(), assignment.getId()))) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Student is already in the teaching assignment");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该学生已在当前教学班中");
         }
         student.getTeachingAssignments().add(assignment);
         assignment.getExcludedStudents().removeIf(item -> Objects.equals(item.getId(), studentId));
@@ -647,13 +672,13 @@ public class AssessmentService {
     public void removeStudentFromTeachingAssignment(UserAccountEntity actor, Long teachingAssignmentId, Long studentId) {
         TeachingAssignmentEntity assignment = loadAssignmentForActor(teachingAssignmentId, actor);
         if (studentId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Student is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择学生");
         }
         StudentEntity student = studentRepository.findById(studentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Student not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "学生不存在"));
         boolean removed = student.getTeachingAssignments().removeIf(item -> Objects.equals(item.getId(), assignment.getId()));
         if (!removed) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Student is not in the teaching assignment");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "该学生不在当前教学班中");
         }
         Long professionalClassId = student.getProfessionalClass() == null ? null : student.getProfessionalClass().getId();
         if (assignmentContainsProfessionalClass(assignment, professionalClassId)) {
@@ -695,21 +720,21 @@ public class AssessmentService {
     @Transactional
     public ExamPaperSummary createExam(UserAccountEntity actor, ExamPaperSaveRequest request) {
         if (request == null || request.teachingAssignmentId() == null || isBlank(request.paperName()) || request.durationMinutes() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Teaching assignment, exam name and duration are required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "教学班、考试名称和时长不能为空");
         }
         if (request.durationMinutes() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Duration must be greater than 0");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "考试时长必须大于0");
         }
         List<Long> questionIds = request.questionIds() == null ? List.of() : request.questionIds().stream()
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
         if (questionIds.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Please select at least one question");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请至少选择一道题目");
         }
 
         TeachingAssignmentEntity assignment = teachingAssignmentRepository.findById(request.teachingAssignmentId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teaching assignment not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "教学班安排不存在"));
         if (actor.getRole() == UserRole.TEACHER) {
             validateTeacherOwnsAssignment(actor, assignment);
         }
@@ -749,23 +774,46 @@ public class AssessmentService {
     }
 
     @Transactional
+    public void deleteExam(Long examId) {
+        if (examId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择考试");
+        }
+        ExamPaperEntity exam = examPaperRepository.findById(examId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "考试不存在"));
+        if (exam.getPaperType() != ExamPaperType.EXAM) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "所选记录不是考试");
+        }
+        // 删除关联的答卷
+        List<ExamResultEntity> results = examResultRepository.findAllByPaperIdOrderBySubmittedAtDesc(examId);
+        if (!results.isEmpty()) {
+            examResultRepository.deleteAll(results);
+        }
+        // 删除关联的题目
+        List<QuestionEntity> questions = questionRepository.findAllByPaperIdOrderBySortOrderAscIdAsc(examId);
+        if (!questions.isEmpty()) {
+            questionRepository.deleteAll(questions);
+        }
+        examPaperRepository.delete(exam);
+    }
+
+    @Transactional
     public MockExamResultGenerationResult generateMockResults(UserAccountEntity actor, Long examId) {
         ExamPaperEntity exam = loadExamPaper(examId);
         if (actor.getRole() == UserRole.TEACHER) {
             validateTeacherOwnsAssignment(actor, exam.getTeachingAssignment());
         }
         if (exam.getTeachingAssignment() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The exam is not bound to a teaching assignment");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "该考试未绑定教学班");
         }
 
         List<QuestionEntity> questions = questionRepository.findAllByPaperIdOrderBySortOrderAscIdAsc(exam.getId());
         if (questions.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The selected exam does not contain any questions");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "所选考试没有包含任何题目");
         }
 
         List<StudentEntity> enrolledStudents = studentRepository.findAllByTeachingAssignmentsIdOrderByIdAsc(exam.getTeachingAssignment().getId());
         if (enrolledStudents.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "There are no students in the current teaching assignment");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "当前教学班没有学生");
         }
 
         Set<Long> submittedStudentIds = examResultRepository.findAllByPaperIdOrderBySubmittedAtDesc(exam.getId()).stream()
@@ -790,9 +838,9 @@ public class AssessmentService {
         }
 
         List<String> messages = new ArrayList<>();
-        messages.add("Generated " + createdCount + " mock answer sheets for the selected exam");
+        messages.add("已生成 " + createdCount + " 份模拟答卷");
         if (skippedCount > 0) {
-            messages.add(skippedCount + " students were skipped because they had already submitted");
+            messages.add("跳过 " + skippedCount + " 名已提交答卷的学生");
         }
 
         return new MockExamResultGenerationResult(exam.getId(), createdCount, skippedCount, messages);
@@ -845,7 +893,7 @@ public class AssessmentService {
             return listResults();
         }
         teachingAssignmentRepository.findById(teachingAssignmentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teaching assignment not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "教学班安排不存在"));
         return listResults().stream()
                 .filter(result -> Objects.equals(result.getTeachingAssignmentId(), teachingAssignmentId))
                 .toList();
@@ -859,13 +907,13 @@ public class AssessmentService {
     @Transactional
     public ExamResult submit(UserAccountEntity actor, ExamSubmitRequest request) {
         if (request == null || request.examId() == null || request.studentId() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Exam and student are required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "考试和学生信息不能为空");
         }
         StudentEntity student = studentRepository.findById(request.studentId())
-                .orElseThrow(() -> new IllegalArgumentException("Student does not exist"));
+                .orElseThrow(() -> new IllegalArgumentException("学生不存在"));
         if (actor != null && actor.getRole() == UserRole.STUDENT) {
             if (actor.getStudent() == null || !Objects.equals(actor.getStudent().getId(), student.getId())) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only submit your own exam");
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "只能提交自己的考试");
             }
         }
         ExamPaperEntity paper = loadExamPaper(request.examId());
@@ -874,14 +922,14 @@ public class AssessmentService {
             LocalDateTime now = LocalDateTime.now();
             LocalDateTime endTime = paper.getStartTime().plusMinutes(Math.max(1, paper.getDurationMinutes()));
             if (now.isBefore(paper.getStartTime())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "The exam has not started yet");
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "考试尚未开始");
             }
             if (now.isAfter(endTime)) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "The exam has already ended");
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "考试已结束");
             }
         }
         if (examResultRepository.countByPaperIdAndStudentId(paper.getId(), student.getId()) > 0) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "This student has already submitted this exam");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该学生已提交过此考试");
         }
         List<QuestionEntity> questions = questionRepository.findAllByPaperIdOrderBySortOrderAscIdAsc(paper.getId());
 
@@ -897,11 +945,11 @@ public class AssessmentService {
     @Transactional
     public ExamResult confirmScore(UserAccountEntity actor, ScoreConfirmRequest request) {
         ExamResultEntity result = examResultRepository.findById(request.resultId())
-                .orElseThrow(() -> new IllegalArgumentException("Result record does not exist"));
+                .orElseThrow(() -> new IllegalArgumentException("成绩记录不存在"));
         if (actor != null && actor.getRole() == UserRole.TEACHER) {
             ExamPaperEntity paper = result.getPaper();
             if (paper == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Result does not belong to a valid exam");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "成绩记录不属于有效考试");
             }
             validateTeacherOwnsAssignment(actor, paper.getTeachingAssignment());
         }
@@ -959,13 +1007,17 @@ public class AssessmentService {
                         Collectors.counting()
                 ));
 
+        Map<CourseObjective, Integer> fullScores = objectiveFullScores(actor, teachingAssignmentId);
         Map<String, Double> objectiveAverage = new LinkedHashMap<>();
+        Map<String, Double> objectiveRatios = new LinkedHashMap<>();
         for (CourseObjective objective : CourseObjective.values()) {
             double objectiveAvg = results.stream()
                     .mapToInt(result -> result.getObjectiveScores().getOrDefault(objective, 0))
                     .average()
                     .orElse(0);
             objectiveAverage.put(objective.getLabel(), round(objectiveAvg));
+            int fullScore = Math.max(1, fullScores.getOrDefault(objective, 0));
+            objectiveRatios.put(objective.getLabel(), Math.round(objectiveAvg / fullScore * 1000.0) / 1000.0);
         }
 
         return new AnalysisSummary(
@@ -975,7 +1027,7 @@ public class AssessmentService {
                 scoreBands,
                 questionTypeCount,
                 objectiveAverage,
-                buildSuggestions(objectiveAverage, average)
+                buildSuggestions(objectiveRatios, average)
         );
     }
 
@@ -1020,10 +1072,10 @@ public class AssessmentService {
 
     private TeachingAssignmentEntity loadAssignmentForActor(Long teachingAssignmentId, UserAccountEntity actor) {
         if (teachingAssignmentId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Teaching assignment is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择教学班安排");
         }
         TeachingAssignmentEntity assignment = teachingAssignmentRepository.findById(teachingAssignmentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teaching assignment not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "教学班安排不存在"));
         if (actor.getRole() == UserRole.TEACHER) {
             validateTeacherOwnsAssignment(actor, assignment);
         }
@@ -1035,28 +1087,28 @@ public class AssessmentService {
             return;
         }
         if (assignment == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Teaching assignment is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择教学班安排");
         }
         UserAccountEntity teacherAccount = assignment.getTeacherAccount();
         if (teacherAccount == null || !Objects.equals(teacherAccount.getUsername(), actor.getUsername())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only manage your own classes");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "只能管理自己负责的教学班");
         }
     }
 
     private Set<ProfessionalClassEntity> loadProfessionalClasses(List<Long> professionalClassIds) {
         if (professionalClassIds == null || professionalClassIds.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Please select at least one professional class");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请至少选择一个专业班级");
         }
         List<Long> distinctIds = professionalClassIds.stream()
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
         if (distinctIds.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Please select at least one professional class");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请至少选择一个专业班级");
         }
         List<ProfessionalClassEntity> classes = professionalClassRepository.findAllByIdIn(distinctIds);
         if (classes.size() != distinctIds.size()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Some selected professional classes do not exist");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "部分所选专业班级不存在");
         }
         return new LinkedHashSet<>(classes);
     }
@@ -1145,7 +1197,7 @@ public class AssessmentService {
 
     private ProfessionalClassEntity resolveProfessionalClass(String className) {
         if (isBlank(className)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Class name is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "班级名称不能为空");
         }
         String normalized = className.trim();
         return professionalClassRepository.findByName(normalized)
@@ -1158,7 +1210,7 @@ public class AssessmentService {
 
     private List<QuestionImportRow> parseQuestionImportRows(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Please upload a question import file");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请上传题目导入文件");
         }
         String fileName = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase(Locale.ROOT);
         try {
@@ -1315,16 +1367,16 @@ public class AssessmentService {
 
     private void applyQuestion(QuestionEntity entity, ExamPaperEntity paper, Question question) {
         if (question == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Question payload is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请填写题目信息");
         }
         if (question.getType() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Question type is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择题型");
         }
         if (question.getObjective() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Course objective is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择课程目标");
         }
         if (question.getScore() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Score must be greater than 0");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "分值必须大于0");
         }
 
         entity.setPaper(paper);
@@ -1341,13 +1393,13 @@ public class AssessmentService {
 
     private void ensureQuestionBelongsToPaper(QuestionEntity entity, ExamPaperEntity paper) {
         if (entity.getPaper() == null || !Objects.equals(entity.getPaper().getId(), paper.getId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Question does not belong to the active paper");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "题目不属于当前试卷");
         }
     }
 
     private List<ImportRow> parseImportRows(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Please upload a student table file");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请上传学生表格文件");
         }
         String fileName = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase(Locale.ROOT);
         try {
@@ -1356,13 +1408,13 @@ public class AssessmentService {
             }
             return parseWorkbookRows(file);
         } catch (IOException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to read import file");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "读取导入文件失败");
         }
     }
 
     private List<ProfessionalClassImportRow> parseProfessionalClassImportRows(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Please upload a class roster file");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请上传班级名单文件");
         }
         String fileName = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase(Locale.ROOT);
         try {
@@ -1371,7 +1423,7 @@ public class AssessmentService {
             }
             return parseProfessionalClassWorkbookRows(file);
         } catch (IOException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to read class roster file");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "读取班级名单文件失败");
         }
     }
 
@@ -1631,17 +1683,7 @@ public class AssessmentService {
     }
 
     private List<String> buildSuggestions(Map<String, Double> objectiveAverage, double average) {
-        List<String> suggestions = new ArrayList<>();
-        objectiveAverage.entrySet().stream()
-                .min(Map.Entry.comparingByValue())
-                .ifPresent(entry -> suggestions.add(entry.getKey() + " has the lowest average achievement and should get more targeted practice and feedback"));
-        if (average < 70) {
-            suggestions.add("The overall average is below 70. Review exam difficulty, teaching coverage, and process assessment weights");
-        } else {
-            suggestions.add("The overall performance meets expectations. Continue to follow low-score students and optimize comprehensive problem practice");
-        }
-        suggestions.add("Use the platform statistics together with teacher review to close the improvement loop");
-        return suggestions;
+        return openAiGradingService.generateImprovementSuggestions(objectiveAverage, average);
     }
 
     private String normalize(String value) {
@@ -1675,12 +1717,12 @@ public class AssessmentService {
 
     private ExamPaperEntity loadExamPaper(Long examId) {
         if (examId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Exam is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择考试");
         }
         ExamPaperEntity exam = examPaperRepository.findWithTeachingAssignmentById(examId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Exam not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "考试不存在"));
         if (exam.getPaperType() != ExamPaperType.EXAM) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected record is not an exam");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "所选记录不是考试");
         }
         return exam;
     }
@@ -1700,7 +1742,7 @@ public class AssessmentService {
             return listQuestions();
         }
         teachingAssignmentRepository.findById(teachingAssignmentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teaching assignment not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "教学班安排不存在"));
         List<ExamPaperEntity> exams = examPaperRepository.findAllByPaperTypeAndTeachingAssignmentIdOrderByStartTimeDescIdDesc(
                 ExamPaperType.EXAM,
                 teachingAssignmentId
@@ -1722,7 +1764,7 @@ public class AssessmentService {
         for (Long questionId : questionIds) {
             QuestionEntity question = bankQuestions.get(questionId);
             if (question == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected question does not exist in the question bank: " + questionId);
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "所选题目在题库中不存在：" + questionId);
             }
             ordered.add(question);
         }
@@ -1752,21 +1794,21 @@ public class AssessmentService {
             return null;
         }
         return studentRepository.findDetailedById(actor.getStudent().getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Student not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "学生不存在"));
     }
 
     private void validateStudentCanJoinExam(StudentEntity student, ExamPaperEntity exam) {
         if (student == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Student information is missing");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "学生信息缺失");
         }
         TeachingAssignmentEntity assignment = exam.getTeachingAssignment();
         if (assignment == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The exam is not bound to a teaching assignment");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "该考试未绑定教学班");
         }
         boolean enrolled = student.getTeachingAssignments().stream()
                 .anyMatch(item -> Objects.equals(item.getId(), assignment.getId()));
         if (!enrolled) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "The student is not in the target teaching assignment");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "该学生不在目标教学班中");
         }
     }
 
@@ -1894,6 +1936,12 @@ public class AssessmentService {
                 entity.getId(),
                 entity.getCourseName(),
                 entity.getClassName(),
+                entity.getCourseCode(),
+                entity.getCreditHours(),
+                entity.getCredits(),
+                entity.getSemester(),
+                entity.getCollege(),
+                entity.getGrade(),
                 teacher == null ? null : teacher.getId(),
                 teacher == null ? null : teacher.getUsername(),
                 teacher == null ? null : teacher.getDisplayName(),
@@ -1904,6 +1952,78 @@ public class AssessmentService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    @Transactional(readOnly = true)
+    public List<RegularGrade> listRegularGrades(UserAccountEntity actor, Long teachingAssignmentId) {
+        TeachingAssignmentEntity assignment = loadAssignmentForActor(teachingAssignmentId, actor);
+        List<Student> students = listStudents(actor, teachingAssignmentId);
+        Map<Long, RegularGradeEntity> gradeMap = regularGradeRepository.findAllByTeachingAssignmentId(assignment.getId())
+                .stream()
+                .collect(Collectors.toMap(g -> g.getStudent().getId(), g -> g, (a, b) -> a, LinkedHashMap::new));
+
+        // 获取期末考试成绩
+        Map<Long, Integer> examScoreMap = new LinkedHashMap<>();
+        List<ExamResult> examResults = listResults(actor, teachingAssignmentId);
+        for (ExamResult result : examResults) {
+            examScoreMap.putIfAbsent(result.getStudent().getId(), result.getTotalScore());
+        }
+
+        List<RegularGrade> result = new ArrayList<>();
+        for (Student student : students) {
+            RegularGradeEntity entity = gradeMap.get(student.getId());
+            Integer examScore = examScoreMap.get(student.getId());
+            Integer labScore = entity != null ? entity.getLabScore() : null;
+            Integer homeworkScore = entity != null ? entity.getHomeworkScore() : null;
+            Integer classScore = entity != null ? entity.getClassScore() : null;
+            Double totalScore = calculateTotalScore(labScore, homeworkScore, classScore, examScore);
+
+            result.add(new RegularGrade(
+                    entity != null ? entity.getId() : null,
+                    student.getId(), student.getStudentNo(), student.getName(),
+                    teachingAssignmentId, labScore, homeworkScore, classScore,
+                    examScore, totalScore,
+                    entity != null ? entity.getUpdatedAt() : null));
+        }
+        return result;
+    }
+
+    private Double calculateTotalScore(Integer labScore, Integer homeworkScore, Integer classScore, Integer examScore) {
+        if (labScore == null && homeworkScore == null && classScore == null && examScore == null) {
+            return null;
+        }
+        double lab = labScore != null ? labScore : 0;
+        double hw = homeworkScore != null ? homeworkScore : 0;
+        double cls = classScore != null ? classScore : 0;
+        double exam = examScore != null ? examScore : 0;
+        // 平时成绩: 上机12% + 作业12% + 课堂表现6% = 30%
+        // 期末成绩: 70%
+        return Math.round((lab * 0.12 + hw * 0.12 + cls * 0.06 + exam * 0.70) * 100.0) / 100.0;
+    }
+
+    @Transactional
+    public List<RegularGrade> saveRegularGrades(UserAccountEntity actor, RegularGradeSaveRequest request) {
+        TeachingAssignmentEntity assignment = loadAssignmentForActor(request.teachingAssignmentId(), actor);
+        for (RegularGradeSaveRequest.RegularGradeEntry entry : request.grades()) {
+            StudentEntity student = studentRepository.findById(entry.studentId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "学生不存在"));
+            RegularGradeEntity entity = regularGradeRepository
+                    .findByStudentIdAndTeachingAssignmentId(student.getId(), assignment.getId())
+                    .orElseGet(RegularGradeEntity::new);
+            if (entity.getStudent() == null) entity.setStudent(student);
+            if (entity.getTeachingAssignment() == null) entity.setTeachingAssignment(assignment);
+            entity.setLabScore(clampScore(entry.labScore()));
+            entity.setHomeworkScore(clampScore(entry.homeworkScore()));
+            entity.setClassScore(clampScore(entry.classScore()));
+            entity.setUpdatedAt(LocalDateTime.now());
+            regularGradeRepository.save(entity);
+        }
+        return listRegularGrades(actor, request.teachingAssignmentId());
+    }
+
+    private Integer clampScore(Integer score) {
+        if (score == null) return null;
+        return Math.max(0, Math.min(100, score));
     }
 
     private record ImportRow(String studentNo, String name) {

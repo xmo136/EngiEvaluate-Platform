@@ -28,7 +28,7 @@ public class AuthService {
         UserAccountEntity account = userAccountRepository.findByUsername(request.username())
                 .orElse(null);
         if (account == null || !Objects.equals(account.getPassword(), request.password())) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户名或密码错误");
         }
         return toResponse(account);
     }
@@ -39,12 +39,12 @@ public class AuthService {
         for (UserRole allowedRole : allowedRoles) {
             if (actualRole == allowedRole) {
                 if (account.isPasswordChangeRequired()) {
-                    throw new ResponseStatusException(HttpStatus.PRECONDITION_REQUIRED, "Password change required");
+                    throw new ResponseStatusException(HttpStatus.PRECONDITION_REQUIRED, "请先修改初始密码");
                 }
                 return account;
             }
         }
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Current role is not allowed");
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "当前角色无权限访问");
     }
 
     public UserAccountEntity currentAccount(String usernameHeader, String roleHeader) {
@@ -56,18 +56,18 @@ public class AuthService {
     public LoginResponse changePassword(String usernameHeader, String roleHeader, PasswordChangeRequest request) {
         UserAccountEntity account = currentAccount(usernameHeader, roleHeader);
         if (request == null || request.currentPassword() == null || request.newPassword() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password payload is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请填写密码信息");
         }
         if (!Objects.equals(account.getPassword(), request.currentPassword())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Current password is incorrect");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "当前密码不正确");
         }
 
         String nextPassword = request.newPassword().trim();
         if (nextPassword.length() < 6) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "New password must be at least 6 characters");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "新密码长度不能少于6位");
         }
         if (Objects.equals(account.getPassword(), nextPassword)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "New password must be different");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "新密码不能与旧密码相同");
         }
 
         account.setPassword(nextPassword);
@@ -77,24 +77,24 @@ public class AuthService {
 
     private UserRole parseRole(String roleHeader) {
         if (roleHeader == null || roleHeader.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Please login first");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "请先登录");
         }
         try {
             return UserRole.valueOf(roleHeader);
         } catch (IllegalArgumentException ex) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid role");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "无效的角色");
         }
     }
 
     private UserAccountEntity loadAccount(String usernameHeader, UserRole actualRole) {
         if (usernameHeader == null || usernameHeader.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing username");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "缺少用户名");
         }
         String username = decodeUsernameHeader(usernameHeader);
         UserAccountEntity account = userAccountRepository.findByUsername(username)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Account not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "账号不存在"));
         if (account.getRole() != actualRole) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Session role does not match account");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "会话角色与账号不匹配");
         }
         return account;
     }
@@ -123,7 +123,7 @@ public class AuthService {
     private List<String> allowedViews(UserRole role) {
         return switch (role) {
             case ADMIN -> List.of("dashboard", "teaching", "students", "questions", "reports");
-            case TEACHER -> List.of("dashboard", "students", "questions", "exam", "results", "reports");
+            case TEACHER -> List.of("dashboard", "students", "questions", "exam", "results", "regularGrades", "reports");
             case STUDENT -> List.of("exam");
         };
     }

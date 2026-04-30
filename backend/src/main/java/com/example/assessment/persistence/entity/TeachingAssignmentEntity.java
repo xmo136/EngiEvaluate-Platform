@@ -28,6 +28,24 @@ public class TeachingAssignmentEntity {
     @Column(name = "class_name", nullable = false, length = 64)
     private String className;
 
+    @Column(name = "course_code", length = 32)
+    private String courseCode;
+
+    @Column(name = "credit_hours")
+    private Integer creditHours;
+
+    @Column(name = "credits")
+    private Integer credits;
+
+    @Column(name = "semester", length = 32)
+    private String semester;
+
+    @Column(name = "college", length = 64)
+    private String college;
+
+    @Column(name = "grade", length = 16)
+    private String grade;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "teacher_account_id")
     private UserAccountEntity teacherAccount;
@@ -73,6 +91,54 @@ public class TeachingAssignmentEntity {
 
     public void setClassName(String className) {
         this.className = className;
+    }
+
+    public String getCourseCode() {
+        return courseCode;
+    }
+
+    public void setCourseCode(String courseCode) {
+        this.courseCode = courseCode;
+    }
+
+    public Integer getCreditHours() {
+        return creditHours;
+    }
+
+    public void setCreditHours(Integer creditHours) {
+        this.creditHours = creditHours;
+    }
+
+    public Integer getCredits() {
+        return credits;
+    }
+
+    public void setCredits(Integer credits) {
+        this.credits = credits;
+    }
+
+    public String getSemester() {
+        return semester;
+    }
+
+    public void setSemester(String semester) {
+        this.semester = semester;
+    }
+
+    public String getCollege() {
+        return college;
+    }
+
+    public void setCollege(String college) {
+        this.college = college;
+    }
+
+    public String getGrade() {
+        return grade;
+    }
+
+    public void setGrade(String grade) {
+        this.grade = grade;
     }
 
     public UserAccountEntity getTeacherAccount() {

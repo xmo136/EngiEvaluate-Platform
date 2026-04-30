@@ -3,6 +3,7 @@ package com.example.assessment.controller;
 import com.example.assessment.dto.AnalysisSummary;
 import com.example.assessment.dto.ExamPaperSaveRequest;
 import com.example.assessment.dto.ExamSubmitRequest;
+import com.example.assessment.dto.RegularGradeSaveRequest;
 import com.example.assessment.dto.ScoreConfirmRequest;
 import com.example.assessment.dto.StudentCreateRequest;
 import com.example.assessment.dto.StudentUpdateRequest;
@@ -13,6 +14,7 @@ import com.example.assessment.dto.TeachingAssignmentUpdateRequest;
 import com.example.assessment.model.ExamPaperSummary;
 import com.example.assessment.model.ExamResult;
 import com.example.assessment.model.MockExamResultGenerationResult;
+import com.example.assessment.model.RegularGrade;
 import com.example.assessment.model.QuestionImportResult;
 import com.example.assessment.model.ProfessionalClassImportResult;
 import com.example.assessment.model.ProfessionalClassOption;
@@ -28,6 +30,7 @@ import com.example.assessment.service.AuthService;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -219,6 +222,14 @@ public class AssessmentController {
         return assessmentService.createExam(actor, request);
     }
 
+    @DeleteMapping("/exams/{examId}")
+    public void deleteExam(@RequestHeader(value = "X-Username", required = false) String username,
+                           @RequestHeader(value = "X-User-Role", required = false) String role,
+                           @PathVariable Long examId) {
+        authService.requireAnyRole(username, role, UserRole.ADMIN, UserRole.TEACHER);
+        assessmentService.deleteExam(examId);
+    }
+
     @PostMapping("/exams/{examId}/mock-results")
     public MockExamResultGenerationResult generateMockResults(@RequestHeader(value = "X-Username", required = false) String username,
                                                               @RequestHeader(value = "X-User-Role", required = false) String role,
@@ -298,5 +309,21 @@ public class AssessmentController {
                                     @RequestParam(value = "teachingAssignmentId", required = false) Long teachingAssignmentId) {
         UserAccountEntity actor = authService.requireAnyRole(username, role, UserRole.ADMIN, UserRole.TEACHER);
         return assessmentService.analysis(actor, teachingAssignmentId);
+    }
+
+    @GetMapping("/regular-grades")
+    public List<RegularGrade> regularGrades(@RequestHeader(value = "X-Username", required = false) String username,
+                                            @RequestHeader(value = "X-User-Role", required = false) String role,
+                                            @RequestParam(value = "teachingAssignmentId") Long teachingAssignmentId) {
+        UserAccountEntity actor = authService.requireAnyRole(username, role, UserRole.ADMIN, UserRole.TEACHER);
+        return assessmentService.listRegularGrades(actor, teachingAssignmentId);
+    }
+
+    @PutMapping("/regular-grades")
+    public List<RegularGrade> saveRegularGrades(@RequestHeader(value = "X-Username", required = false) String username,
+                                                @RequestHeader(value = "X-User-Role", required = false) String role,
+                                                @RequestBody RegularGradeSaveRequest request) {
+        UserAccountEntity actor = authService.requireAnyRole(username, role, UserRole.ADMIN, UserRole.TEACHER);
+        return assessmentService.saveRegularGrades(actor, request);
     }
 }

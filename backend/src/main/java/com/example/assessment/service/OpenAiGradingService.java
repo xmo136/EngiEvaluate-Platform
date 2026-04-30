@@ -15,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -197,6 +198,126 @@ public class OpenAiGradingService {
 
     private String safe(String value) {
         return value == null || value.isBlank() ? "N/A" : value.trim();
+    }
+
+    public List<String> generateImprovementSuggestions(Map<String, Double> objectiveAverage, double average) {
+        Map<String, String> perObjective = generatePerObjectiveSuggestions(objectiveAverage, average);
+        return new ArrayList<>(perObjective.values());
+    }
+
+    public Map<String, String> generatePerObjectiveSuggestions(Map<String, Double> objectiveAverage, double average) {
+        if (!enabled || apiKey.isBlank()) {
+            return fallbackPerObjectiveSuggestions(objectiveAverage, average);
+        }
+
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl.endsWith("/") ? baseUrl + "chat/completions" : baseUrl + "/chat/completions"))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(timeoutSeconds))
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(buildPerObjectiveRequestBody(objectiveAverage, average))))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.warn("AI suggestion request failed with status {} and body {}", response.statusCode(), response.body());
+                return fallbackPerObjectiveSuggestions(objectiveAverage, average);
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            String content = root.path("choices").path(0).path("message").path("content").asText("");
+            if (content.isBlank()) {
+                log.warn("AI suggestion response did not contain message content: {}", response.body());
+                return fallbackPerObjectiveSuggestions(objectiveAverage, average);
+            }
+
+            String jsonStr = extractJson(content);
+            JsonNode resultNode = objectMapper.readTree(jsonStr);
+            Map<String, String> result = new LinkedHashMap<>();
+            for (Map.Entry<String, Double> entry : objectiveAverage.entrySet()) {
+                String key = entry.getKey();
+                JsonNode node = resultNode.path(key);
+                if (node.isTextual() && !node.asText("").isBlank()) {
+                    result.put(key, node.asText(""));
+                } else {
+                    return fallbackPerObjectiveSuggestions(objectiveAverage, average);
+                }
+            }
+            return result.isEmpty() ? fallbackPerObjectiveSuggestions(objectiveAverage, average) : result;
+        } catch (IOException | InterruptedException ex) {
+            if (ex instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            log.warn("AI suggestion request failed", ex);
+            return fallbackPerObjectiveSuggestions(objectiveAverage, average);
+        }
+    }
+
+    private Map<String, Object> buildPerObjectiveRequestBody(Map<String, Double> objectiveAverage, double average) {
+        StringBuilder dataDesc = new StringBuilder();
+        dataDesc.append("总体平均分：").append(String.format("%.1f", average)).append("\n");
+        dataDesc.append("各课程目标达成度：\n");
+        for (Map.Entry<String, Double> entry : objectiveAverage.entrySet()) {
+            dataDesc.append("  - ").append(entry.getKey()).append("：").append(String.format("%.3f", entry.getValue())).append("\n");
+        }
+
+        String systemPrompt = """
+                你是一名专业的工程教育评估分析助手。
+                请根据提供的考试数据，为每个课程目标分别生成"评价结果分析"和"持续改进"建议。
+                要求：
+                1. 使用中文
+                2. 每个课程目标的文本格式为：评价结果分析：xxx。持续改进：xxx。
+                3. 评价结果分析应结合该目标的达成度数据，分析达成情况（良好/中等/基本达成/需改进）
+                4. 持续改进建议应具体、可操作，针对该目标的薄弱环节
+                返回 JSON 对象，key 为课程目标名称，value 为完整的"评价结果分析：... 持续改进：..."文本。
+                """;
+
+        StringBuilder jsonFormat = new StringBuilder("{\n");
+        List<String> keys = new ArrayList<>(objectiveAverage.keySet());
+        for (int i = 0; i < keys.size(); i++) {
+            jsonFormat.append("  \"").append(keys.get(i)).append("\": \"评价结果分析：... 持续改进：...\"");
+            if (i < keys.size() - 1) jsonFormat.append(",");
+            jsonFormat.append("\n");
+        }
+        jsonFormat.append("}");
+
+        String userPrompt = "请根据以下考试分析数据，为每个课程目标生成评价结果分析和持续改进建议：\n\n"
+                + dataDesc + "\n返回格式示例：\n" + jsonFormat;
+
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("model", model);
+        request.put("stream", false);
+        request.put("max_tokens", 1024);
+        request.put("temperature", 0.7);
+        request.put("top_p", topP);
+        request.put("frequency_penalty", frequencyPenalty);
+        request.put("extra_body", Map.of("top_k", topK));
+        request.put("messages", List.of(
+                Map.of("role", "system", "content", systemPrompt),
+                Map.of("role", "user", "content", userPrompt)
+        ));
+        return request;
+    }
+
+    private Map<String, String> fallbackPerObjectiveSuggestions(Map<String, Double> objectiveAverage, double average) {
+        Map<String, String> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Double> entry : objectiveAverage.entrySet()) {
+            String name = entry.getKey();
+            double value = entry.getValue();
+            String level = value >= 0.8 ? "良好" : value >= 0.7 ? "中等" : value >= 0.6 ? "基本达成" : "需改进";
+            String analysis = name + "当前达成评价值为" + String.format("%.3f", value) + "，达成情况" + level + "。";
+            String suggestion;
+            if (value < 0.7) {
+                suggestion = name + "达成度偏低，建议增加针对性练习和反馈，强化薄弱知识点的教学。";
+            } else if (value >= 0.8) {
+                suggestion = name + "达成情况良好，建议继续保持当前教学方法，关注低分学生的个别辅导。";
+            } else {
+                suggestion = name + "达成情况中等，建议适当增加相关练习题和案例分析，提升学生综合应用能力。";
+            }
+            result.put(name, "评价结果分析：" + analysis + "持续改进：" + suggestion);
+        }
+        return result;
     }
 
     public record AiGradingDecision(int score, String suggestion) {
