@@ -4,3 +4,10 @@ frontend/dist/
 *.log
 .idea/
 .vscode/
+.agents/
+.claude/
+.env
+application-local.yml
+
+skills-lock.json
+.gitignore
